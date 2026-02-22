@@ -1,5 +1,8 @@
 {
-  "name": "ai-sdk-agent-sdk",
+  "name": "@zenyr/ai-sdk-agent-sdk",
+  "workspaces": [
+    "packages/*"
+  ],
   "module": "index.ts",
   "type": "module",
   "private": true,
