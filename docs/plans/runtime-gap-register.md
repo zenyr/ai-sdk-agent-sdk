@@ -3,7 +3,8 @@
 ## G-001 Stream Semantics Gap
 - Priority: high
 - Area: `doStream`
-- Current: stream is generated after `doGenerate` completion.
+- Current: event bridge exists but parity coverage is still incomplete for all block families.
+- Progress: switched to event-based streaming bridge using `stream_event` messages.
 - Target: event-based streaming bridge from Agent SDK stream events.
 - Validation: stream lifecycle contract tests.
 - ADR: `0003-streaming-semantics-mapping.md`

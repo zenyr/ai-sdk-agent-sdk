@@ -23,6 +23,7 @@ import {
   type Options as AgentQueryOptions,
   type SDKAssistantMessage,
   type SDKMessage,
+  type SDKPartialAssistantMessage,
   type SDKResultMessage,
   type ThinkingConfig,
 } from '@anthropic-ai/claude-agent-sdk';
@@ -151,6 +152,12 @@ const isAssistantMessage = (message: SDKMessage): message is SDKAssistantMessage
 
 const isResultMessage = (message: SDKMessage): message is SDKResultMessage => {
   return message.type === 'result';
+};
+
+const isPartialAssistantMessage = (
+  message: SDKMessage,
+): message is SDKPartialAssistantMessage => {
+  return message.type === 'stream_event';
 };
 
 const isStructuredTextEnvelope = (value: unknown): value is StructuredTextEnvelope => {
@@ -667,6 +674,276 @@ const buildProviderMetadata = (
   };
 };
 
+type StreamBlockState =
+  | {
+      kind: 'text';
+      id: string;
+    }
+  | {
+      kind: 'reasoning';
+      id: string;
+    }
+  | {
+      kind: 'tool-input';
+      id: string;
+    };
+
+type StreamEventState = {
+  blockStates: Map<number, StreamBlockState>;
+  emittedResponseMetadata: boolean;
+  latestStopReason: string | null;
+  latestUsage: LanguageModelV3Usage | undefined;
+};
+
+const createEmptyUsage = (): LanguageModelV3Usage => {
+  return {
+    inputTokens: {
+      total: undefined,
+      noCache: undefined,
+      cacheRead: undefined,
+      cacheWrite: undefined,
+    },
+    outputTokens: {
+      total: undefined,
+      text: undefined,
+      reasoning: undefined,
+    },
+  };
+};
+
+const mapUsageFromMessageDelta = (usageValue: unknown): LanguageModelV3Usage | undefined => {
+  if (!isRecord(usageValue)) {
+    return undefined;
+  }
+
+  const totalInput = readNumber(usageValue, 'input_tokens');
+  const cacheRead = readNumber(usageValue, 'cache_read_input_tokens');
+  const cacheWrite = readNumber(usageValue, 'cache_creation_input_tokens');
+  const outputTokens = readNumber(usageValue, 'output_tokens');
+
+  if (
+    totalInput === undefined &&
+    cacheRead === undefined &&
+    cacheWrite === undefined &&
+    outputTokens === undefined
+  ) {
+    return undefined;
+  }
+
+  let noCache: number | undefined;
+  if (typeof totalInput === 'number') {
+    noCache = totalInput - (cacheRead ?? 0) - (cacheWrite ?? 0);
+  }
+
+  return {
+    inputTokens: {
+      total: totalInput,
+      noCache,
+      cacheRead,
+      cacheWrite,
+    },
+    outputTokens: {
+      total: outputTokens,
+      text: outputTokens,
+      reasoning: undefined,
+    },
+  };
+};
+
+const appendStreamPartsFromRawEvent = (
+  rawEvent: unknown,
+  streamState: StreamEventState,
+): LanguageModelV3StreamPart[] => {
+  if (!isRecord(rawEvent)) {
+    return [];
+  }
+
+  const eventType = readString(rawEvent, 'type');
+  if (eventType === undefined) {
+    return [];
+  }
+
+  if (eventType === 'message_start') {
+    const message = readRecord(rawEvent, 'message');
+    if (!isRecord(message)) {
+      return [];
+    }
+
+    streamState.emittedResponseMetadata = true;
+
+    return [
+      {
+        type: 'response-metadata',
+        id: readString(message, 'id'),
+        modelId: readString(message, 'model'),
+      },
+    ];
+  }
+
+  if (eventType === 'content_block_start') {
+    const index = readNumber(rawEvent, 'index');
+    const contentBlock = readRecord(rawEvent, 'content_block');
+
+    if (index === undefined || contentBlock === undefined) {
+      return [];
+    }
+
+    const contentBlockType = readString(contentBlock, 'type');
+    if (contentBlockType === 'text') {
+      const blockId = generateId();
+      streamState.blockStates.set(index, { kind: 'text', id: blockId });
+      return [{ type: 'text-start', id: blockId }];
+    }
+
+    if (contentBlockType === 'thinking') {
+      const blockId = generateId();
+      streamState.blockStates.set(index, { kind: 'reasoning', id: blockId });
+      return [{ type: 'reasoning-start', id: blockId }];
+    }
+
+    if (
+      contentBlockType === 'tool_use' ||
+      contentBlockType === 'server_tool_use' ||
+      contentBlockType === 'mcp_tool_use'
+    ) {
+      const blockId = readString(contentBlock, 'id') ?? generateId();
+      const toolName = readString(contentBlock, 'name') ?? 'unknown_tool';
+      const providerExecuted =
+        contentBlockType === 'server_tool_use' || contentBlockType === 'mcp_tool_use';
+      const dynamic = contentBlockType === 'mcp_tool_use';
+
+      streamState.blockStates.set(index, { kind: 'tool-input', id: blockId });
+
+      return [
+        {
+          type: 'tool-input-start',
+          id: blockId,
+          toolName,
+          providerExecuted,
+          dynamic,
+        },
+      ];
+    }
+
+    return [];
+  }
+
+  if (eventType === 'content_block_delta') {
+    const index = readNumber(rawEvent, 'index');
+    const delta = readRecord(rawEvent, 'delta');
+
+    if (index === undefined || delta === undefined) {
+      return [];
+    }
+
+    const blockState = streamState.blockStates.get(index);
+    if (blockState === undefined) {
+      return [];
+    }
+
+    const deltaType = readString(delta, 'type');
+
+    if (blockState.kind === 'text' && deltaType === 'text_delta') {
+      return [
+        {
+          type: 'text-delta',
+          id: blockState.id,
+          delta: readString(delta, 'text') ?? '',
+        },
+      ];
+    }
+
+    if (blockState.kind === 'reasoning' && deltaType === 'thinking_delta') {
+      return [
+        {
+          type: 'reasoning-delta',
+          id: blockState.id,
+          delta: readString(delta, 'thinking') ?? '',
+        },
+      ];
+    }
+
+    if (blockState.kind === 'tool-input' && deltaType === 'input_json_delta') {
+      return [
+        {
+          type: 'tool-input-delta',
+          id: blockState.id,
+          delta: readString(delta, 'partial_json') ?? '',
+        },
+      ];
+    }
+
+    return [];
+  }
+
+  if (eventType === 'content_block_stop') {
+    const index = readNumber(rawEvent, 'index');
+    if (index === undefined) {
+      return [];
+    }
+
+    const blockState = streamState.blockStates.get(index);
+    if (blockState === undefined) {
+      return [];
+    }
+
+    streamState.blockStates.delete(index);
+
+    if (blockState.kind === 'text') {
+      return [{ type: 'text-end', id: blockState.id }];
+    }
+
+    if (blockState.kind === 'reasoning') {
+      return [{ type: 'reasoning-end', id: blockState.id }];
+    }
+
+    return [{ type: 'tool-input-end', id: blockState.id }];
+  }
+
+  if (eventType === 'message_delta') {
+    const delta = readRecord(rawEvent, 'delta');
+    if (delta !== undefined) {
+      const stopReason = delta.stop_reason;
+      if (stopReason === null || typeof stopReason === 'string') {
+        streamState.latestStopReason = stopReason;
+      }
+    }
+
+    const usage = mapUsageFromMessageDelta(readRecord(rawEvent, 'usage'));
+    if (usage !== undefined) {
+      streamState.latestUsage = usage;
+    }
+
+    return [];
+  }
+
+  return [];
+};
+
+const closePendingStreamBlocks = (
+  streamState: StreamEventState,
+): LanguageModelV3StreamPart[] => {
+  const parts: LanguageModelV3StreamPart[] = [];
+
+  for (const blockState of streamState.blockStates.values()) {
+    if (blockState.kind === 'text') {
+      parts.push({ type: 'text-end', id: blockState.id });
+      continue;
+    }
+
+    if (blockState.kind === 'reasoning') {
+      parts.push({ type: 'reasoning-end', id: blockState.id });
+      continue;
+    }
+
+    parts.push({ type: 'tool-input-end', id: blockState.id });
+  }
+
+  streamState.blockStates.clear();
+
+  return parts;
+};
+
 class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
   readonly specificationVersion: 'v3' = 'v3';
   readonly provider: string;
@@ -895,40 +1172,212 @@ class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
   }
 
   async doStream(options: LanguageModelV3CallOptions): Promise<LanguageModelV3StreamResult> {
-    const generated = await this.doGenerate(options);
-    const streamParts: LanguageModelV3StreamPart[] = [
-      {
-        type: 'stream-start',
-        warnings: generated.warnings,
-      },
-      {
-        type: 'response-metadata',
-        modelId: generated.response?.modelId,
-        timestamp: generated.response?.timestamp,
-        id: generated.response?.id,
-      },
-      ...contentToStreamParts(generated.content),
-      {
-        type: 'finish',
-        usage: generated.usage,
-        finishReason: generated.finishReason,
-        providerMetadata: generated.providerMetadata,
-      },
-    ];
+    const completionMode = buildCompletionMode(options);
+    const anthropicOptions = parseAnthropicProviderOptions(options);
+    const warnings = collectWarnings(options, completionMode);
+
+    const basePrompt = serializePrompt(options.prompt);
+    let prompt = basePrompt;
+    let outputFormat: AgentQueryOptions['outputFormat'];
+
+    if (completionMode.type === 'tools') {
+      prompt = `${buildToolInstruction(completionMode.tools, options.toolChoice)}\n\n${basePrompt}`;
+      outputFormat = {
+        type: 'json_schema',
+        schema: completionMode.schema,
+      };
+    }
+
+    if (completionMode.type === 'json') {
+      prompt = `Return only JSON that matches the required schema.\n\n${basePrompt}`;
+      outputFormat = {
+        type: 'json_schema',
+        schema: completionMode.schema,
+      };
+    }
+
+    const abortController = new AbortController();
+    const externalAbortSignal = options.abortSignal;
+
+    const cleanupAbortListener = () => {
+      if (externalAbortSignal !== undefined) {
+        externalAbortSignal.removeEventListener('abort', abortFromExternalSignal);
+      }
+    };
+
+    const abortFromExternalSignal = () => {
+      abortController.abort();
+    };
+
+    if (externalAbortSignal !== undefined) {
+      if (externalAbortSignal.aborted) {
+        abortController.abort();
+      }
+
+      externalAbortSignal.addEventListener('abort', abortFromExternalSignal, {
+        once: true,
+      });
+    }
+
+    const env: Record<string, string | undefined> = {
+      ...process.env,
+    };
+
+    if (typeof this.settings.apiKey === 'string' && this.settings.apiKey.length > 0) {
+      env.ANTHROPIC_API_KEY = this.settings.apiKey;
+    }
+
+    if (
+      typeof this.settings.authToken === 'string' &&
+      this.settings.authToken.length > 0
+    ) {
+      env.ANTHROPIC_AUTH_TOKEN = this.settings.authToken;
+    }
+
+    const queryOptions: AgentQueryOptions = {
+      model: this.modelId,
+      tools: [],
+      permissionMode: 'dontAsk',
+      maxTurns: 1,
+      abortController,
+      env,
+      outputFormat,
+      effort: anthropicOptions.effort,
+      thinking: anthropicOptions.thinking,
+      cwd: process.cwd(),
+      includePartialMessages: true,
+    };
+
+    const streamState: StreamEventState = {
+      blockStates: new Map(),
+      emittedResponseMetadata: false,
+      latestStopReason: null,
+      latestUsage: undefined,
+    };
 
     const stream = new ReadableStream<LanguageModelV3StreamPart>({
-      start: controller => {
-        for (const streamPart of streamParts) {
-          controller.enqueue(streamPart);
-        }
+      start: async controller => {
+        let finalResultMessage: SDKResultMessage | undefined;
 
-        controller.close();
+        controller.enqueue({
+          type: 'stream-start',
+          warnings,
+        });
+
+        try {
+          for await (const message of query({ prompt, options: queryOptions })) {
+            if (isPartialAssistantMessage(message)) {
+              const mappedParts = appendStreamPartsFromRawEvent(
+                message.event,
+                streamState,
+              );
+
+              for (const mappedPart of mappedParts) {
+                controller.enqueue(mappedPart);
+              }
+
+              continue;
+            }
+
+            if (isResultMessage(message)) {
+              finalResultMessage = message;
+            }
+          }
+
+          if (!streamState.emittedResponseMetadata) {
+            controller.enqueue({
+              type: 'response-metadata',
+              modelId: this.modelId,
+            });
+          }
+
+          const remainingParts = closePendingStreamBlocks(streamState);
+          for (const remainingPart of remainingParts) {
+            controller.enqueue(remainingPart);
+          }
+
+          if (
+            finalResultMessage?.subtype === 'success' &&
+            completionMode.type === 'tools' &&
+            isStructuredToolEnvelope(finalResultMessage.structured_output)
+          ) {
+            for (const call of finalResultMessage.structured_output.calls) {
+              controller.enqueue({
+                type: 'tool-call',
+                toolCallId: this.idGenerator(),
+                toolName: call.toolName,
+                input: safeJsonStringify(call.input),
+                providerExecuted: false,
+              });
+            }
+          }
+
+          let finishReason = mapFinishReason(streamState.latestStopReason);
+          let usage = streamState.latestUsage ?? createEmptyUsage();
+          let providerMetadata: Record<string, JSONObject> | undefined;
+
+          if (finalResultMessage !== undefined) {
+            usage = mapUsage(finalResultMessage);
+            finishReason = mapFinishReason(finalResultMessage.stop_reason);
+            providerMetadata = buildProviderMetadata(finalResultMessage);
+
+            if (finalResultMessage.subtype !== 'success') {
+              finishReason = {
+                unified: 'error',
+                raw: finalResultMessage.subtype,
+              };
+
+              controller.enqueue({
+                type: 'error',
+                error: finalResultMessage.errors.join('\n'),
+              });
+            }
+          }
+
+          controller.enqueue({
+            type: 'finish',
+            usage,
+            finishReason,
+            providerMetadata,
+          });
+        } catch (error) {
+          const remainingParts = closePendingStreamBlocks(streamState);
+          for (const remainingPart of remainingParts) {
+            controller.enqueue(remainingPart);
+          }
+
+          controller.enqueue({
+            type: 'error',
+            error,
+          });
+
+          controller.enqueue({
+            type: 'finish',
+            usage: streamState.latestUsage ?? createEmptyUsage(),
+            finishReason: {
+              unified: 'error',
+              raw: 'stream-bridge-error',
+            },
+          });
+        } finally {
+          cleanupAbortListener();
+          controller.close();
+        }
+      },
+      cancel: () => {
+        abortController.abort();
+        cleanupAbortListener();
       },
     });
 
     return {
       stream,
-      request: generated.request,
+      request: {
+        body: {
+          prompt,
+          completionMode: completionMode.type,
+        },
+      },
       response: {
         headers: undefined,
       },
