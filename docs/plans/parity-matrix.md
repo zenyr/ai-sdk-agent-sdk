@@ -30,7 +30,7 @@ Status legend:
 | `doStream` semantics | degraded | synthetic stream from generated output | `packages/main/index.ts` |
 | Function tools | degraded | JSON envelope strategy | `packages/main/index.ts` |
 | Provider tools | unsupported | warning path, no full runtime protocol | `packages/main/index.ts` |
-| Provider option coverage | degraded | partial mapping (`effort`, `thinking`) | `packages/main/index.ts` |
+| Provider option coverage | degraded | partial mapping (`effort`, `thinking`) + explicit warning classifier | `packages/main/index.ts` |
 | Metadata coverage | degraded | partial, many fields null | `packages/main/index.ts` |
 
 ## Follow-up

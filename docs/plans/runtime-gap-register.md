@@ -20,6 +20,7 @@
 - Priority: high
 - Area: anthropic provider options
 - Current: only subset is mapped.
+- Progress: warning classifier added for degraded/unsupported/unknown options.
 - Target: classify all options (`mapped/degraded/ignored/rejected`).
 - Validation: warning and behavior tests.
 - ADR: `0005-option-mapping-policy.md`

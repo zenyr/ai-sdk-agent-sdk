@@ -27,6 +27,8 @@ import {
   type ThinkingConfig,
 } from '@anthropic-ai/claude-agent-sdk';
 
+import { collectAnthropicProviderOptionWarnings } from './internal/anthropic-option-warnings';
+
 import type {
   AnthropicLanguageModelOptions,
   AnthropicMessageMetadata,
@@ -526,7 +528,9 @@ const collectWarnings = (
   options: LanguageModelV3CallOptions,
   mode: CompletionMode,
 ): SharedV3Warning[] => {
-  const warnings: SharedV3Warning[] = [];
+  const warnings: SharedV3Warning[] = collectAnthropicProviderOptionWarnings(
+    options.providerOptions,
+  );
 
   if (typeof options.temperature === 'number') {
     warnings.push({
