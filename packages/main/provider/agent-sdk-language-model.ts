@@ -4,6 +4,7 @@ import type {
   LanguageModelV3CallOptions,
   LanguageModelV3Content,
   LanguageModelV3GenerateResult,
+  LanguageModelV3Message,
   LanguageModelV3StreamPart,
   LanguageModelV3StreamResult,
   SharedV3Warning,
@@ -31,7 +32,10 @@ import {
   mapStructuredToolCallsToContent,
   parseAnthropicProviderOptions,
 } from "../bridge/parse-utils";
-import { serializePrompt } from "../bridge/prompt-serializer";
+import {
+  joinSerializedPromptMessages,
+  serializePromptMessages,
+} from "../bridge/prompt-serializer";
 import {
   buildProviderMetadata,
   mapFinishReason,
@@ -126,6 +130,19 @@ type ToolBridgeConfig = {
   mcpServers: NonNullable<AgentQueryOptions["mcpServers"]>;
 };
 
+type PromptSessionState = {
+  sessionId: string;
+  serializedPromptMessages: string[];
+};
+
+type PromptQueryInput = {
+  prompt: string;
+  serializedPromptMessages: string[];
+  resumeSessionId?: string;
+};
+
+const MAX_PROMPT_SESSION_STATES = 20;
+
 const toBridgeToolName = (toolName: string): string => {
   return `${TOOL_BRIDGE_NAME_PREFIX}${toolName}`;
 };
@@ -155,6 +172,151 @@ const normalizeToolInputJson = (value: string): string => {
   } catch {
     return trimmedValue;
   }
+};
+
+const hasSerializedPromptPrefix = (
+  prefix: string[],
+  target: string[],
+): boolean => {
+  if (prefix.length > target.length) {
+    return false;
+  }
+
+  for (let index = 0; index < prefix.length; index += 1) {
+    if (prefix[index] !== target[index]) {
+      return false;
+    }
+  }
+
+  return true;
+};
+
+const hasIdenticalSerializedPrompt = (
+  source: string[],
+  target: string[],
+): boolean => {
+  if (source.length !== target.length) {
+    return false;
+  }
+
+  for (let index = 0; index < source.length; index += 1) {
+    if (source[index] !== target[index]) {
+      return false;
+    }
+  }
+
+  return true;
+};
+
+const findBestPromptSessionState = (args: {
+  serializedPromptMessages: string[];
+  previousSessionStates: PromptSessionState[];
+}): PromptSessionState | undefined => {
+  let bestState: PromptSessionState | undefined;
+
+  for (const sessionState of args.previousSessionStates) {
+    if (
+      !hasSerializedPromptPrefix(
+        sessionState.serializedPromptMessages,
+        args.serializedPromptMessages,
+      )
+    ) {
+      continue;
+    }
+
+    if (
+      bestState === undefined ||
+      sessionState.serializedPromptMessages.length >
+        bestState.serializedPromptMessages.length
+    ) {
+      bestState = sessionState;
+    }
+  }
+
+  return bestState;
+};
+
+const mergePromptSessionState = (args: {
+  previousSessionStates: PromptSessionState[];
+  nextSessionState: PromptSessionState;
+}): PromptSessionState[] => {
+  const dedupedStates = args.previousSessionStates.filter((sessionState) => {
+    if (sessionState.sessionId === args.nextSessionState.sessionId) {
+      return false;
+    }
+
+    return !hasIdenticalSerializedPrompt(
+      sessionState.serializedPromptMessages,
+      args.nextSessionState.serializedPromptMessages,
+    );
+  });
+
+  return [args.nextSessionState, ...dedupedStates].slice(
+    0,
+    MAX_PROMPT_SESSION_STATES,
+  );
+};
+
+const buildPromptQueryInput = (args: {
+  promptMessages: LanguageModelV3Message[];
+  previousSessionStates: PromptSessionState[];
+}): PromptQueryInput => {
+  const serializedPromptMessages = serializePromptMessages(args.promptMessages);
+  const fullPrompt = joinSerializedPromptMessages(serializedPromptMessages);
+  const previousSessionState = findBestPromptSessionState({
+    serializedPromptMessages,
+    previousSessionStates: args.previousSessionStates,
+  });
+
+  if (previousSessionState === undefined) {
+    return {
+      prompt: fullPrompt,
+      serializedPromptMessages,
+    };
+  }
+
+  const previousPromptMessages = previousSessionState.serializedPromptMessages;
+  if (!hasSerializedPromptPrefix(previousPromptMessages, serializedPromptMessages)) {
+    return {
+      prompt: fullPrompt,
+      serializedPromptMessages,
+    };
+  }
+
+  const appendedPromptMessages = serializedPromptMessages.slice(
+    previousPromptMessages.length,
+  );
+
+  if (appendedPromptMessages.length === 0) {
+    return {
+      prompt: fullPrompt,
+      serializedPromptMessages,
+    };
+  }
+
+  return {
+    prompt: joinSerializedPromptMessages(appendedPromptMessages),
+    serializedPromptMessages,
+    resumeSessionId: previousSessionState.sessionId,
+  };
+};
+
+const readSessionIdFromQueryMessages = (args: {
+  resultMessage: SDKResultMessage | undefined;
+  assistantMessage: SDKAssistantMessage | undefined;
+}): string | undefined => {
+  if (isRecord(args.resultMessage)) {
+    const sessionIdFromResult = readString(args.resultMessage, "session_id");
+    if (sessionIdFromResult !== undefined) {
+      return sessionIdFromResult;
+    }
+  }
+
+  if (!isRecord(args.assistantMessage)) {
+    return undefined;
+  }
+
+  return readString(args.assistantMessage, "session_id");
 };
 
 const buildToolBridgeConfig = (
@@ -376,6 +538,7 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
   private readonly settings: AnthropicProviderSettings;
   private readonly idGenerator: () => string;
   private readonly providerSettingWarnings: SharedV3Warning[];
+  private promptSessionStates: PromptSessionState[] = [];
 
   constructor(args: {
     modelId: string;
@@ -401,7 +564,11 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
       ...this.providerSettingWarnings,
     ];
 
-    const basePrompt = serializePrompt(options.prompt);
+    const promptQueryInput = buildPromptQueryInput({
+      promptMessages: options.prompt,
+      previousSessionStates: this.promptSessionStates,
+    });
+    const basePrompt = promptQueryInput.prompt;
     let prompt = basePrompt;
     let outputFormat: AgentQueryOptions["outputFormat"];
     const toolBridgeConfig =
@@ -437,6 +604,7 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
       model: this.modelId,
       tools: [],
       allowedTools: toolBridgeConfig?.allowedTools ?? [],
+      resume: promptQueryInput.resumeSessionId,
       permissionMode: "dontAsk",
       settingSources: [],
       maxTurns: 1,
@@ -577,6 +745,21 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
           abortFromExternalSignal,
         );
       }
+    }
+
+    const sessionId = readSessionIdFromQueryMessages({
+      resultMessage: finalResultMessage,
+      assistantMessage: lastAssistantMessage,
+    });
+
+    if (sessionId !== undefined) {
+      this.promptSessionStates = mergePromptSessionState({
+        previousSessionStates: this.promptSessionStates,
+        nextSessionState: {
+          sessionId,
+          serializedPromptMessages: promptQueryInput.serializedPromptMessages,
+        },
+      });
     }
 
     if (finalResultMessage === undefined) {
@@ -864,7 +1047,11 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
       ...this.providerSettingWarnings,
     ];
 
-    const basePrompt = serializePrompt(options.prompt);
+    const promptQueryInput = buildPromptQueryInput({
+      promptMessages: options.prompt,
+      previousSessionStates: this.promptSessionStates,
+    });
+    const basePrompt = promptQueryInput.prompt;
     let prompt = basePrompt;
     let outputFormat: AgentQueryOptions["outputFormat"];
     const toolBridgeConfig =
@@ -910,6 +1097,7 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
       model: this.modelId,
       tools: [],
       allowedTools: toolBridgeConfig?.allowedTools ?? [],
+      resume: promptQueryInput.resumeSessionId,
       permissionMode: "dontAsk",
       settingSources: [],
       maxTurns: 1,
@@ -1214,6 +1402,21 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
                 });
               }
             }
+          }
+
+          const sessionId = readSessionIdFromQueryMessages({
+            resultMessage: finalResultMessage,
+            assistantMessage: lastAssistantMessage,
+          });
+
+          if (sessionId !== undefined) {
+            this.promptSessionStates = mergePromptSessionState({
+              previousSessionStates: this.promptSessionStates,
+              nextSessionState: {
+                sessionId,
+                serializedPromptMessages: promptQueryInput.serializedPromptMessages,
+              },
+            });
           }
 
           if (emittedToolModeToolCalls && finishReason.unified !== "error") {

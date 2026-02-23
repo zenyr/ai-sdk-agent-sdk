@@ -47,6 +47,18 @@ export const serializeMessage = (message: LanguageModelV3Message): string => {
   return `[${message.role}]\n${serializedContent}`;
 };
 
+export const serializePromptMessages = (
+  prompt: LanguageModelV3Message[],
+): string[] => {
+  return prompt.map(serializeMessage);
+};
+
+export const joinSerializedPromptMessages = (
+  serializedMessages: string[],
+): string => {
+  return serializedMessages.join("\n\n");
+};
+
 export const serializePrompt = (prompt: LanguageModelV3Message[]): string => {
-  return prompt.map(serializeMessage).join("\n\n");
+  return joinSerializedPromptMessages(serializePromptMessages(prompt));
 };

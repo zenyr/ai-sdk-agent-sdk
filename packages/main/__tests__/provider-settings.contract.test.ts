@@ -23,15 +23,73 @@ const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === 'object' && value !== null;
 };
 
-const readEnvFromFirstQueryCall = (
+const readQueryCall = (
   queryCalls: unknown[],
+  index: number,
 ): Record<string, unknown> | undefined => {
-  const firstCall = queryCalls[0];
-  if (!isRecord(firstCall)) {
+  const queryCall = queryCalls[index];
+  if (!isRecord(queryCall)) {
     return undefined;
   }
 
-  const options = firstCall.options;
+  return queryCall;
+};
+
+const readOptionsFromQueryCall = (
+  queryCalls: unknown[],
+  index: number,
+): Record<string, unknown> | undefined => {
+  const queryCall = readQueryCall(queryCalls, index);
+  if (queryCall === undefined) {
+    return undefined;
+  }
+
+  const options = queryCall.options;
+  if (!isRecord(options)) {
+    return undefined;
+  }
+
+  return options;
+};
+
+const readPromptFromQueryCall = (
+  queryCalls: unknown[],
+  index: number,
+): string | undefined => {
+  const queryCall = readQueryCall(queryCalls, index);
+  if (queryCall === undefined) {
+    return undefined;
+  }
+
+  const prompt = queryCall.prompt;
+  if (typeof prompt !== 'string') {
+    return undefined;
+  }
+
+  return prompt;
+};
+
+const readResumeFromQueryCall = (
+  queryCalls: unknown[],
+  index: number,
+): string | undefined => {
+  const options = readOptionsFromQueryCall(queryCalls, index);
+  if (options === undefined) {
+    return undefined;
+  }
+
+  const resume = options.resume;
+  if (typeof resume !== 'string' || resume.length === 0) {
+    return undefined;
+  }
+
+  return resume;
+};
+
+const readEnvFromFirstQueryCall = (
+  queryCalls: unknown[],
+): Record<string, unknown> | undefined => {
+  const options = readOptionsFromQueryCall(queryCalls, 0);
   if (!isRecord(options)) {
     return undefined;
   }
@@ -45,28 +103,13 @@ const readEnvFromFirstQueryCall = (
 };
 
 const readPromptFromFirstQueryCall = (queryCalls: unknown[]): string | undefined => {
-  const firstCall = queryCalls[0];
-  if (!isRecord(firstCall)) {
-    return undefined;
-  }
-
-  const prompt = firstCall.prompt;
-  if (typeof prompt !== 'string') {
-    return undefined;
-  }
-
-  return prompt;
+  return readPromptFromQueryCall(queryCalls, 0);
 };
 
 const readOutputFormatFromFirstQueryCall = (
   queryCalls: unknown[],
 ): Record<string, unknown> | undefined => {
-  const firstCall = queryCalls[0];
-  if (!isRecord(firstCall)) {
-    return undefined;
-  }
-
-  const options = firstCall.options;
+  const options = readOptionsFromQueryCall(queryCalls, 0);
   if (!isRecord(options)) {
     return undefined;
   }
@@ -82,17 +125,7 @@ const readOutputFormatFromFirstQueryCall = (
 const readOptionsFromFirstQueryCall = (
   queryCalls: unknown[],
 ): Record<string, unknown> | undefined => {
-  const firstCall = queryCalls[0];
-  if (!isRecord(firstCall)) {
-    return undefined;
-  }
-
-  const options = firstCall.options;
-  if (!isRecord(options)) {
-    return undefined;
-  }
-
-  return options;
+  return readOptionsFromQueryCall(queryCalls, 0);
 };
 
 const importIndexWithMockedQuery = async (args: {
@@ -823,6 +856,175 @@ describe('provider settings contract', () => {
     expect(firstContentPart.toolName).toBe('bash');
     expect(firstContentPart.input).toContain('Math.random');
     expect(result.finishReason.unified).toBe('tool-calls');
+  });
+
+  test('reuses claude session with appended prompt messages', async () => {
+    const queryCalls: unknown[] = [];
+    let callCount = 0;
+
+    const { createAnthropic } = await importIndexWithMockedQuery({
+      queryCalls,
+      resultFactory: () => {
+        callCount += 1;
+
+        return {
+          type: 'result',
+          subtype: 'success',
+          stop_reason: 'end_turn',
+          result: 'ok',
+          usage: buildMockResultUsage(),
+          session_id: `session-${callCount}`,
+        };
+      },
+    });
+
+    const model = createAnthropic({})('claude-3-5-haiku-latest');
+
+    await model.doGenerate({
+      prompt: [
+        {
+          role: 'user',
+          content: [{ type: 'text', text: '첫 질문' }],
+        },
+      ],
+    });
+
+    await model.doGenerate({
+      prompt: [
+        {
+          role: 'user',
+          content: [{ type: 'text', text: '첫 질문' }],
+        },
+        {
+          role: 'assistant',
+          content: [{ type: 'text', text: '첫 답변' }],
+        },
+        {
+          role: 'user',
+          content: [{ type: 'text', text: '두 번째 질문' }],
+        },
+      ],
+    });
+
+    expect(queryCalls.length).toBe(2);
+
+    const secondPrompt = readPromptFromQueryCall(queryCalls, 1);
+    expect(secondPrompt).toBeDefined();
+
+    if (secondPrompt === undefined) {
+      return;
+    }
+
+    expect(secondPrompt.includes('첫 질문')).toBeFalse();
+    expect(secondPrompt.includes('두 번째 질문')).toBeTrue();
+
+    const resumedSessionId = readResumeFromQueryCall(queryCalls, 1);
+    expect(resumedSessionId).toBe('session-1');
+  });
+
+  test('does not reuse claude session when prompt diverges', async () => {
+    const queryCalls: unknown[] = [];
+
+    const { createAnthropic } = await importIndexWithMockedQuery({
+      queryCalls,
+      resultFactory: () => {
+        return {
+          type: 'result',
+          subtype: 'success',
+          stop_reason: 'end_turn',
+          result: 'ok',
+          usage: buildMockResultUsage(),
+          session_id: 'session-diverge',
+        };
+      },
+    });
+
+    const model = createAnthropic({})('claude-3-5-haiku-latest');
+
+    await model.doGenerate({
+      prompt: [
+        {
+          role: 'user',
+          content: [{ type: 'text', text: '첫 질문' }],
+        },
+      ],
+    });
+
+    await model.doGenerate({
+      prompt: [
+        {
+          role: 'user',
+          content: [{ type: 'text', text: '완전히 다른 질문' }],
+        },
+      ],
+    });
+
+    expect(queryCalls.length).toBe(2);
+    expect(readResumeFromQueryCall(queryCalls, 1)).toBeUndefined();
+
+    const secondPrompt = readPromptFromQueryCall(queryCalls, 1);
+    expect(secondPrompt).toContain('완전히 다른 질문');
+  });
+
+  test('tracks multiple prompt histories and resumes matching branch', async () => {
+    const queryCalls: unknown[] = [];
+    let callCount = 0;
+
+    const { createAnthropic } = await importIndexWithMockedQuery({
+      queryCalls,
+      resultFactory: () => {
+        callCount += 1;
+
+        return {
+          type: 'result',
+          subtype: 'success',
+          stop_reason: 'end_turn',
+          result: 'ok',
+          usage: buildMockResultUsage(),
+          session_id: `session-branch-${callCount}`,
+        };
+      },
+    });
+
+    const model = createAnthropic({})('claude-3-5-haiku-latest');
+
+    await model.doGenerate({
+      prompt: [
+        {
+          role: 'user',
+          content: [{ type: 'text', text: 'A: 첫 질문' }],
+        },
+      ],
+    });
+
+    await model.doGenerate({
+      prompt: [
+        {
+          role: 'user',
+          content: [{ type: 'text', text: 'B: 첫 질문' }],
+        },
+      ],
+    });
+
+    await model.doGenerate({
+      prompt: [
+        {
+          role: 'user',
+          content: [{ type: 'text', text: 'A: 첫 질문' }],
+        },
+        {
+          role: 'assistant',
+          content: [{ type: 'text', text: 'A: 첫 답변' }],
+        },
+        {
+          role: 'user',
+          content: [{ type: 'text', text: 'A: 두 번째 질문' }],
+        },
+      ],
+    });
+
+    expect(queryCalls.length).toBe(3);
+    expect(readResumeFromQueryCall(queryCalls, 2)).toBe('session-branch-1');
   });
 
   test('runs claude-agent-sdk in isolated no-tool mode', async () => {

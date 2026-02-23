@@ -295,6 +295,102 @@ describe('stream bridge contract', () => {
     expect(firstTextDelta.delta).toBe('안녕하세요! 무엇을 도와드릴까요?');
   });
 
+  test('doStream reuses claude session with appended prompt messages', async () => {
+    const queryCalls: unknown[] = [];
+    let callCount = 0;
+
+    mock.module('@anthropic-ai/claude-agent-sdk', () => {
+      return {
+        query: async function* (request: unknown) {
+          queryCalls.push(request);
+          callCount += 1;
+
+          yield {
+            type: 'result',
+            subtype: 'success',
+            stop_reason: 'end_turn',
+            result: 'ok',
+            usage: buildMockResultUsage(),
+            session_id: `stream-session-${callCount}`,
+          };
+        },
+      };
+    });
+
+    const moduleId = `../index.ts?stream-contract-resume-${Date.now()}-${Math.random()}`;
+    const { anthropic } = await import(moduleId);
+    const model = anthropic('claude-3-5-haiku-latest');
+
+    const firstStreamResult = await model.doStream({
+      prompt: [
+        {
+          role: 'user',
+          content: [{ type: 'text', text: '첫 질문' }],
+        },
+      ],
+    });
+
+    for await (const _part of firstStreamResult.stream) {
+      // consume to completion
+    }
+
+    const secondStreamResult = await model.doStream({
+      prompt: [
+        {
+          role: 'user',
+          content: [{ type: 'text', text: '첫 질문' }],
+        },
+        {
+          role: 'assistant',
+          content: [{ type: 'text', text: '첫 답변' }],
+        },
+        {
+          role: 'user',
+          content: [{ type: 'text', text: '두 번째 질문' }],
+        },
+      ],
+    });
+
+    for await (const _part of secondStreamResult.stream) {
+      // consume to completion
+    }
+
+    expect(queryCalls.length).toBe(2);
+
+    const secondCall = queryCalls[1];
+    expect(typeof secondCall).toBe('object');
+    expect(secondCall).not.toBeNull();
+
+    if (typeof secondCall !== 'object' || secondCall === null) {
+      return;
+    }
+
+    const secondPrompt =
+      typeof secondCall.prompt === 'string' ? secondCall.prompt : undefined;
+    expect(secondPrompt).toBeDefined();
+
+    if (secondPrompt === undefined) {
+      return;
+    }
+
+    expect(secondPrompt.includes('첫 질문')).toBeFalse();
+    expect(secondPrompt.includes('두 번째 질문')).toBeTrue();
+
+    const options =
+      typeof secondCall.options === 'object' && secondCall.options !== null
+        ? secondCall.options
+        : undefined;
+    expect(options).toBeDefined();
+
+    if (options === undefined) {
+      return;
+    }
+
+    const resume =
+      typeof options.resume === 'string' ? options.resume : undefined;
+    expect(resume).toBe('stream-session-1');
+  });
+
   test('tool mode emits tool-call from buffered stream text envelope', async () => {
     mock.module('@anthropic-ai/claude-agent-sdk', () => {
       return {
