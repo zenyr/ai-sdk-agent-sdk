@@ -1,4 +1,8 @@
-import { describe, expect, mock, test } from 'bun:test';
+import { afterEach, describe, expect, mock, test } from "bun:test";
+
+afterEach(() => {
+  mock.restore();
+});
 
 const buildMockResultUsage = () => {
   return {
@@ -9,59 +13,59 @@ const buildMockResultUsage = () => {
   };
 };
 
-describe('stream bridge contract', () => {
-  test('doStream emits metadata from stream events', async () => {
-    mock.module('@anthropic-ai/claude-agent-sdk', () => {
+describe("stream bridge contract", () => {
+  test("doStream emits metadata from stream events", async () => {
+    mock.module("@anthropic-ai/claude-agent-sdk", () => {
       return {
         query: async function* () {
           yield {
-            type: 'stream_event',
+            type: "stream_event",
             event: {
-              type: 'message_start',
+              type: "message_start",
               message: {
-                id: 'msg-1',
-                model: 'mock-model',
+                id: "msg-1",
+                model: "mock-model",
               },
             },
           };
 
           yield {
-            type: 'stream_event',
+            type: "stream_event",
             event: {
-              type: 'content_block_start',
+              type: "content_block_start",
               index: 0,
               content_block: {
-                type: 'text',
+                type: "text",
               },
             },
           };
 
           yield {
-            type: 'stream_event',
+            type: "stream_event",
             event: {
-              type: 'content_block_delta',
+              type: "content_block_delta",
               index: 0,
               delta: {
-                type: 'text_delta',
-                text: 'hello',
+                type: "text_delta",
+                text: "hello",
               },
             },
           };
 
           yield {
-            type: 'stream_event',
+            type: "stream_event",
             event: {
-              type: 'content_block_stop',
+              type: "content_block_stop",
               index: 0,
             },
           };
 
           yield {
-            type: 'stream_event',
+            type: "stream_event",
             event: {
-              type: 'message_delta',
+              type: "message_delta",
               delta: {
-                stop_reason: 'end_turn',
+                stop_reason: "end_turn",
               },
               usage: {
                 input_tokens: 10,
@@ -73,10 +77,10 @@ describe('stream bridge contract', () => {
           };
 
           yield {
-            type: 'result',
-            subtype: 'success',
-            stop_reason: 'end_turn',
-            result: 'done',
+            type: "result",
+            subtype: "success",
+            stop_reason: "end_turn",
+            result: "done",
             usage: buildMockResultUsage(),
           };
         },
@@ -86,11 +90,11 @@ describe('stream bridge contract', () => {
     const moduleId = `../index.ts?stream-contract-${Date.now()}`;
     const { anthropic } = await import(moduleId);
 
-    const streamResult = await anthropic('claude-3-5-haiku-latest').doStream({
+    const streamResult = await anthropic("claude-3-5-haiku-latest").doStream({
       prompt: [
         {
-          role: 'user',
-          content: [{ type: 'text', text: 'say hello' }],
+          role: "user",
+          content: [{ type: "text", text: "say hello" }],
         },
       ],
     });
@@ -100,122 +104,177 @@ describe('stream bridge contract', () => {
       parts.push(part);
     }
 
-    const metadataPart = parts.find(part => {
+    const metadataPart = parts.find((part) => {
       return (
-        typeof part === 'object' &&
+        typeof part === "object" &&
         part !== null &&
-        'type' in part &&
-        part.type === 'response-metadata'
+        "type" in part &&
+        part.type === "response-metadata"
       );
     });
 
     expect(metadataPart).toBeDefined();
 
     if (
-      typeof metadataPart !== 'object' ||
+      typeof metadataPart !== "object" ||
       metadataPart === null ||
-      !('id' in metadataPart) ||
-      !('modelId' in metadataPart)
+      !("id" in metadataPart) ||
+      !("modelId" in metadataPart)
     ) {
       return;
     }
 
-    expect(metadataPart.id).toBe('msg-1');
-    expect(metadataPart.modelId).toBe('mock-model');
+    expect(metadataPart.id).toBe("msg-1");
+    expect(metadataPart.modelId).toBe("mock-model");
 
-    const hasTextDelta = parts.some(part => {
+    const hasTextDelta = parts.some((part) => {
       return (
-        typeof part === 'object' &&
-        part !== null &&
-        'type' in part &&
-        part.type === 'text-delta'
+        typeof part === "object" && part !== null && "type" in part && part.type === "text-delta"
       );
     });
 
     expect(hasTextDelta).toBeTrue();
 
-    const finishPart = parts.find(part => {
-      return (
-        typeof part === 'object' &&
-        part !== null &&
-        'type' in part &&
-        part.type === 'finish'
-      );
+    const finishPart = parts.find((part) => {
+      return typeof part === "object" && part !== null && "type" in part && part.type === "finish";
     });
 
     expect(finishPart).toBeDefined();
 
-    if (
-      typeof finishPart !== 'object' ||
-      finishPart === null ||
-      !('finishReason' in finishPart)
-    ) {
+    if (typeof finishPart !== "object" || finishPart === null || !("finishReason" in finishPart)) {
       return;
     }
 
     if (
-      typeof finishPart.finishReason !== 'object' ||
+      typeof finishPart.finishReason !== "object" ||
       finishPart.finishReason === null ||
-      !('unified' in finishPart.finishReason)
+      !("unified" in finishPart.finishReason)
     ) {
       return;
     }
 
-    expect(typeof finishPart.finishReason.unified).toBe('string');
+    expect(typeof finishPart.finishReason.unified).toBe("string");
   });
 
-  test('tool mode unwraps text envelope from buffered stream text', async () => {
-    mock.module('@anthropic-ai/claude-agent-sdk', () => {
+  test("doStream forwards system role as query systemPrompt", async () => {
+    const queryCalls: unknown[] = [];
+
+    mock.module("@anthropic-ai/claude-agent-sdk", () => {
+      return {
+        query: async function* (request: unknown) {
+          queryCalls.push(request);
+
+          yield {
+            type: "result",
+            subtype: "success",
+            stop_reason: "end_turn",
+            result: "ok",
+            usage: buildMockResultUsage(),
+          };
+        },
+      };
+    });
+
+    const moduleId = `../index.ts?stream-contract-system-${Date.now()}-${Math.random()}`;
+    const { anthropic } = await import(moduleId);
+
+    const streamResult = await anthropic("claude-3-5-haiku-latest").doStream({
+      prompt: [
+        {
+          role: "system",
+          content: "Follow system rules.",
+        },
+        {
+          role: "user",
+          content: [{ type: "text", text: "hello" }],
+        },
+      ],
+    });
+
+    for await (const _part of streamResult.stream) {
+      // consume stream
+    }
+
+    const firstCall = queryCalls[0];
+    expect(typeof firstCall).toBe("object");
+    expect(firstCall).not.toBeNull();
+
+    if (typeof firstCall !== "object" || firstCall === null) {
+      return;
+    }
+
+    const options =
+      typeof firstCall.options === "object" && firstCall.options !== null
+        ? firstCall.options
+        : undefined;
+    const prompt = typeof firstCall.prompt === "string" ? firstCall.prompt : undefined;
+
+    expect(options).toBeDefined();
+    expect(prompt).toBeDefined();
+
+    if (options === undefined || prompt === undefined) {
+      return;
+    }
+
+    const systemPrompt =
+      typeof options.systemPrompt === "string" ? options.systemPrompt : undefined;
+    expect(systemPrompt).toBe("Follow system rules.");
+    expect(prompt.includes("[system]")).toBeFalse();
+    expect(prompt.includes("hello")).toBeTrue();
+  });
+
+  test("tool mode unwraps text envelope from buffered stream text", async () => {
+    mock.module("@anthropic-ai/claude-agent-sdk", () => {
       return {
         query: async function* () {
           yield {
-            type: 'stream_event',
+            type: "stream_event",
             event: {
-              type: 'message_start',
+              type: "message_start",
               message: {
-                id: 'msg-tool-text',
-                model: 'mock-model',
+                id: "msg-tool-text",
+                model: "mock-model",
               },
             },
           };
 
           yield {
-            type: 'stream_event',
+            type: "stream_event",
             event: {
-              type: 'content_block_start',
+              type: "content_block_start",
               index: 0,
               content_block: {
-                type: 'text',
+                type: "text",
               },
             },
           };
 
           yield {
-            type: 'stream_event',
+            type: "stream_event",
             event: {
-              type: 'content_block_delta',
+              type: "content_block_delta",
               index: 0,
               delta: {
-                type: 'text_delta',
+                type: "text_delta",
                 text: '{"type":"text","text":"안녕하세요! 무엇을 도와드릴까요?"}',
               },
             },
           };
 
           yield {
-            type: 'stream_event',
+            type: "stream_event",
             event: {
-              type: 'content_block_stop',
+              type: "content_block_stop",
               index: 0,
             },
           };
 
           yield {
-            type: 'stream_event',
+            type: "stream_event",
             event: {
-              type: 'message_delta',
+              type: "message_delta",
               delta: {
-                stop_reason: 'end_turn',
+                stop_reason: "end_turn",
               },
               usage: {
                 input_tokens: 10,
@@ -227,10 +286,10 @@ describe('stream bridge contract', () => {
           };
 
           yield {
-            type: 'result',
-            subtype: 'success',
-            stop_reason: 'end_turn',
-            result: 'done',
+            type: "result",
+            subtype: "success",
+            stop_reason: "end_turn",
+            result: "done",
             usage: buildMockResultUsage(),
           };
         },
@@ -240,31 +299,31 @@ describe('stream bridge contract', () => {
     const moduleId = `../index.ts?stream-contract-tool-text-${Date.now()}-${Math.random()}`;
     const { anthropic } = await import(moduleId);
 
-    const streamResult = await anthropic('claude-3-5-haiku-latest').doStream({
+    const streamResult = await anthropic("claude-3-5-haiku-latest").doStream({
       prompt: [
         {
-          role: 'user',
-          content: [{ type: 'text', text: 'hello' }],
+          role: "user",
+          content: [{ type: "text", text: "hello" }],
         },
       ],
       tools: [
         {
-          type: 'function',
-          name: 'lookup_weather',
-          description: 'Lookup weather',
+          type: "function",
+          name: "lookup_weather",
+          description: "Lookup weather",
           inputSchema: {
-            type: 'object',
+            type: "object",
             additionalProperties: false,
-            required: ['city'],
+            required: ["city"],
             properties: {
               city: {
-                type: 'string',
+                type: "string",
               },
             },
           },
         },
       ],
-      toolChoice: { type: 'required' },
+      toolChoice: { type: "required" },
     });
 
     const parts: unknown[] = [];
@@ -272,12 +331,9 @@ describe('stream bridge contract', () => {
       parts.push(part);
     }
 
-    const textDeltas = parts.filter(part => {
+    const textDeltas = parts.filter((part) => {
       return (
-        typeof part === 'object' &&
-        part !== null &&
-        'type' in part &&
-        part.type === 'text-delta'
+        typeof part === "object" && part !== null && "type" in part && part.type === "text-delta"
       );
     });
 
@@ -285,31 +341,31 @@ describe('stream bridge contract', () => {
 
     const firstTextDelta = textDeltas[0];
     if (
-      typeof firstTextDelta !== 'object' ||
+      typeof firstTextDelta !== "object" ||
       firstTextDelta === null ||
-      !('delta' in firstTextDelta)
+      !("delta" in firstTextDelta)
     ) {
       return;
     }
 
-    expect(firstTextDelta.delta).toBe('안녕하세요! 무엇을 도와드릴까요?');
+    expect(firstTextDelta.delta).toBe("안녕하세요! 무엇을 도와드릴까요?");
   });
 
-  test('doStream reuses claude session with appended prompt messages', async () => {
+  test("doStream reuses claude session with appended prompt messages", async () => {
     const queryCalls: unknown[] = [];
     let callCount = 0;
 
-    mock.module('@anthropic-ai/claude-agent-sdk', () => {
+    mock.module("@anthropic-ai/claude-agent-sdk", () => {
       return {
         query: async function* (request: unknown) {
           queryCalls.push(request);
           callCount += 1;
 
           yield {
-            type: 'result',
-            subtype: 'success',
-            stop_reason: 'end_turn',
-            result: 'ok',
+            type: "result",
+            subtype: "success",
+            stop_reason: "end_turn",
+            result: "ok",
             usage: buildMockResultUsage(),
             session_id: `stream-session-${callCount}`,
           };
@@ -319,13 +375,13 @@ describe('stream bridge contract', () => {
 
     const moduleId = `../index.ts?stream-contract-resume-${Date.now()}-${Math.random()}`;
     const { anthropic } = await import(moduleId);
-    const model = anthropic('claude-3-5-haiku-latest');
+    const model = anthropic("claude-3-5-haiku-latest");
 
     const firstStreamResult = await model.doStream({
       prompt: [
         {
-          role: 'user',
-          content: [{ type: 'text', text: '첫 질문' }],
+          role: "user",
+          content: [{ type: "text", text: "첫 질문" }],
         },
       ],
     });
@@ -337,16 +393,16 @@ describe('stream bridge contract', () => {
     const secondStreamResult = await model.doStream({
       prompt: [
         {
-          role: 'user',
-          content: [{ type: 'text', text: '첫 질문' }],
+          role: "user",
+          content: [{ type: "text", text: "첫 질문" }],
         },
         {
-          role: 'assistant',
-          content: [{ type: 'text', text: '첫 답변' }],
+          role: "assistant",
+          content: [{ type: "text", text: "첫 답변" }],
         },
         {
-          role: 'user',
-          content: [{ type: 'text', text: '두 번째 질문' }],
+          role: "user",
+          content: [{ type: "text", text: "두 번째 질문" }],
         },
       ],
     });
@@ -358,26 +414,25 @@ describe('stream bridge contract', () => {
     expect(queryCalls.length).toBe(2);
 
     const secondCall = queryCalls[1];
-    expect(typeof secondCall).toBe('object');
+    expect(typeof secondCall).toBe("object");
     expect(secondCall).not.toBeNull();
 
-    if (typeof secondCall !== 'object' || secondCall === null) {
+    if (typeof secondCall !== "object" || secondCall === null) {
       return;
     }
 
-    const secondPrompt =
-      typeof secondCall.prompt === 'string' ? secondCall.prompt : undefined;
+    const secondPrompt = typeof secondCall.prompt === "string" ? secondCall.prompt : undefined;
     expect(secondPrompt).toBeDefined();
 
     if (secondPrompt === undefined) {
       return;
     }
 
-    expect(secondPrompt.includes('첫 질문')).toBeFalse();
-    expect(secondPrompt.includes('두 번째 질문')).toBeTrue();
+    expect(secondPrompt.includes("첫 질문")).toBeFalse();
+    expect(secondPrompt.includes("두 번째 질문")).toBeTrue();
 
     const options =
-      typeof secondCall.options === 'object' && secondCall.options !== null
+      typeof secondCall.options === "object" && secondCall.options !== null
         ? secondCall.options
         : undefined;
     expect(options).toBeDefined();
@@ -386,63 +441,62 @@ describe('stream bridge contract', () => {
       return;
     }
 
-    const resume =
-      typeof options.resume === 'string' ? options.resume : undefined;
-    expect(resume).toBe('stream-session-1');
+    const resume = typeof options.resume === "string" ? options.resume : undefined;
+    expect(resume).toBe("stream-session-1");
   });
 
-  test('tool mode emits tool-call from buffered stream text envelope', async () => {
-    mock.module('@anthropic-ai/claude-agent-sdk', () => {
+  test("tool mode emits tool-call from buffered stream text envelope", async () => {
+    mock.module("@anthropic-ai/claude-agent-sdk", () => {
       return {
         query: async function* () {
           yield {
-            type: 'stream_event',
+            type: "stream_event",
             event: {
-              type: 'message_start',
+              type: "message_start",
               message: {
-                id: 'msg-tool-calls',
-                model: 'mock-model',
+                id: "msg-tool-calls",
+                model: "mock-model",
               },
             },
           };
 
           yield {
-            type: 'stream_event',
+            type: "stream_event",
             event: {
-              type: 'content_block_start',
+              type: "content_block_start",
               index: 0,
               content_block: {
-                type: 'text',
+                type: "text",
               },
             },
           };
 
           yield {
-            type: 'stream_event',
+            type: "stream_event",
             event: {
-              type: 'content_block_delta',
+              type: "content_block_delta",
               index: 0,
               delta: {
-                type: 'text_delta',
+                type: "text_delta",
                 text: '{"type":"tool-calls","calls":[{"toolName":"lookup_weather","input":{"city":"seoul"}}]}',
               },
             },
           };
 
           yield {
-            type: 'stream_event',
+            type: "stream_event",
             event: {
-              type: 'content_block_stop',
+              type: "content_block_stop",
               index: 0,
             },
           };
 
           yield {
-            type: 'stream_event',
+            type: "stream_event",
             event: {
-              type: 'message_delta',
+              type: "message_delta",
               delta: {
-                stop_reason: 'end_turn',
+                stop_reason: "end_turn",
               },
               usage: {
                 input_tokens: 10,
@@ -454,10 +508,10 @@ describe('stream bridge contract', () => {
           };
 
           yield {
-            type: 'result',
-            subtype: 'success',
-            stop_reason: 'end_turn',
-            result: 'done',
+            type: "result",
+            subtype: "success",
+            stop_reason: "end_turn",
+            result: "done",
             usage: buildMockResultUsage(),
           };
         },
@@ -467,31 +521,31 @@ describe('stream bridge contract', () => {
     const moduleId = `../index.ts?stream-contract-tool-calls-${Date.now()}-${Math.random()}`;
     const { anthropic } = await import(moduleId);
 
-    const streamResult = await anthropic('claude-3-5-haiku-latest').doStream({
+    const streamResult = await anthropic("claude-3-5-haiku-latest").doStream({
       prompt: [
         {
-          role: 'user',
-          content: [{ type: 'text', text: 'call tool' }],
+          role: "user",
+          content: [{ type: "text", text: "call tool" }],
         },
       ],
       tools: [
         {
-          type: 'function',
-          name: 'lookup_weather',
-          description: 'Lookup weather',
+          type: "function",
+          name: "lookup_weather",
+          description: "Lookup weather",
           inputSchema: {
-            type: 'object',
+            type: "object",
             additionalProperties: false,
-            required: ['city'],
+            required: ["city"],
             properties: {
               city: {
-                type: 'string',
+                type: "string",
               },
             },
           },
         },
       ],
-      toolChoice: { type: 'required' },
+      toolChoice: { type: "required" },
     });
 
     const parts: unknown[] = [];
@@ -499,115 +553,99 @@ describe('stream bridge contract', () => {
       parts.push(part);
     }
 
-    const toolCallPart = parts.find(part => {
+    const toolCallPart = parts.find((part) => {
       return (
-        typeof part === 'object' &&
-        part !== null &&
-        'type' in part &&
-        part.type === 'tool-call'
+        typeof part === "object" && part !== null && "type" in part && part.type === "tool-call"
       );
     });
 
     expect(toolCallPart).toBeDefined();
 
     if (
-      typeof toolCallPart !== 'object' ||
+      typeof toolCallPart !== "object" ||
       toolCallPart === null ||
-      !('toolName' in toolCallPart) ||
-      !('input' in toolCallPart)
+      !("toolName" in toolCallPart) ||
+      !("input" in toolCallPart)
     ) {
       return;
     }
 
-    expect(toolCallPart.toolName).toBe('lookup_weather');
+    expect(toolCallPart.toolName).toBe("lookup_weather");
     expect(toolCallPart.input).toBe('{"city":"seoul"}');
 
-    const finishPart = parts.find(part => {
-      return (
-        typeof part === 'object' &&
-        part !== null &&
-        'type' in part &&
-        part.type === 'finish'
-      );
+    const finishPart = parts.find((part) => {
+      return typeof part === "object" && part !== null && "type" in part && part.type === "finish";
     });
 
     expect(finishPart).toBeDefined();
 
-    if (
-      typeof finishPart !== 'object' ||
-      finishPart === null ||
-      !('finishReason' in finishPart)
-    ) {
+    if (typeof finishPart !== "object" || finishPart === null || !("finishReason" in finishPart)) {
       return;
     }
 
     const finishReason = finishPart.finishReason;
-    if (
-      typeof finishReason !== 'object' ||
-      finishReason === null ||
-      !('unified' in finishReason)
-    ) {
+    if (typeof finishReason !== "object" || finishReason === null || !("unified" in finishReason)) {
       return;
     }
 
-    expect(finishReason.unified).toBe('tool-calls');
+    expect(finishReason.unified).toBe("tool-calls");
   });
 
-  test('tool mode emits tool-call from native MCP tool_use stream block', async () => {
-    mock.module('@anthropic-ai/claude-agent-sdk', () => {
+  test("tool mode emits tool-call from native MCP tool_use stream block", async () => {
+    mock.module("@anthropic-ai/claude-agent-sdk", () => {
       return {
         query: async function* () {
           yield {
-            type: 'stream_event',
+            type: "stream_event",
             event: {
-              type: 'message_start',
+              type: "message_start",
               message: {
-                id: 'msg-tool-native-mcp',
-                model: 'mock-model',
+                id: "msg-tool-native-mcp",
+                model: "mock-model",
               },
             },
           };
 
           yield {
-            type: 'stream_event',
+            type: "stream_event",
             event: {
-              type: 'content_block_start',
+              type: "content_block_start",
               index: 0,
               content_block: {
-                type: 'tool_use',
-                id: 'toolu_stream_1',
-                name: 'mcp__ai_sdk_tool_bridge__bash',
+                type: "tool_use",
+                id: "toolu_stream_1",
+                name: "mcp__ai_sdk_tool_bridge__bash",
               },
             },
           };
 
           yield {
-            type: 'stream_event',
+            type: "stream_event",
             event: {
-              type: 'content_block_delta',
+              type: "content_block_delta",
               index: 0,
               delta: {
-                type: 'input_json_delta',
+                type: "input_json_delta",
                 partial_json:
-                  '{"command":"bun -e \\\"console.log(Math.random())\\\"","description":"Run Math.random once"}',
+                  '{"command":"bun -e \\"console.log(Math.random())\\"","description":"Run Math.random once"}',
               },
             },
           };
 
           yield {
-            type: 'stream_event',
+            type: "stream_event",
             event: {
-              type: 'content_block_stop',
+              type: "content_block_stop",
               index: 0,
             },
           };
 
           yield {
-            type: 'stream_event',
+            type: "stream_event",
             event: {
-              type: 'message_delta',
+              type: "message_delta",
               delta: {
-                stop_reason: 'tool_use',
+                stop_reason: "tool_use",
               },
               usage: {
                 input_tokens: 10,
@@ -619,8 +657,8 @@ describe('stream bridge contract', () => {
           };
 
           yield {
-            type: 'result',
-            subtype: 'error_max_turns',
+            type: "result",
+            subtype: "error_max_turns",
             stop_reason: null,
             duration_ms: 1,
             duration_api_ms: 1,
@@ -631,8 +669,8 @@ describe('stream bridge contract', () => {
             modelUsage: {},
             permission_denials: [],
             errors: [],
-            uuid: 'uuid-stream-native-tool',
-            session_id: 'session-stream-native-tool',
+            uuid: "uuid-stream-native-tool",
+            session_id: "session-stream-native-tool",
           };
         },
       };
@@ -641,34 +679,34 @@ describe('stream bridge contract', () => {
     const moduleId = `../index.ts?stream-contract-tool-native-mcp-${Date.now()}-${Math.random()}`;
     const { anthropic } = await import(moduleId);
 
-    const streamResult = await anthropic('claude-3-5-haiku-latest').doStream({
+    const streamResult = await anthropic("claude-3-5-haiku-latest").doStream({
       prompt: [
         {
-          role: 'user',
-          content: [{ type: 'text', text: 'call bash' }],
+          role: "user",
+          content: [{ type: "text", text: "call bash" }],
         },
       ],
       tools: [
         {
-          type: 'function',
-          name: 'bash',
-          description: 'Run shell command',
+          type: "function",
+          name: "bash",
+          description: "Run shell command",
           inputSchema: {
-            type: 'object',
+            type: "object",
             additionalProperties: false,
-            required: ['command', 'description'],
+            required: ["command", "description"],
             properties: {
               command: {
-                type: 'string',
+                type: "string",
               },
               description: {
-                type: 'string',
+                type: "string",
               },
             },
           },
         },
       ],
-      toolChoice: { type: 'required' },
+      toolChoice: { type: "required" },
     });
 
     const parts: unknown[] = [];
@@ -676,141 +714,124 @@ describe('stream bridge contract', () => {
       parts.push(part);
     }
 
-    const toolCallPart = parts.find(part => {
+    const toolCallPart = parts.find((part) => {
       return (
-        typeof part === 'object' &&
-        part !== null &&
-        'type' in part &&
-        part.type === 'tool-call'
+        typeof part === "object" && part !== null && "type" in part && part.type === "tool-call"
       );
     });
 
     expect(toolCallPart).toBeDefined();
 
     if (
-      typeof toolCallPart !== 'object' ||
+      typeof toolCallPart !== "object" ||
       toolCallPart === null ||
-      !('toolCallId' in toolCallPart) ||
-      !('toolName' in toolCallPart) ||
-      !('input' in toolCallPart)
+      !("toolCallId" in toolCallPart) ||
+      !("toolName" in toolCallPart) ||
+      !("input" in toolCallPart)
     ) {
       return;
     }
 
-    expect(toolCallPart.toolCallId).toBe('toolu_stream_1');
-    expect(toolCallPart.toolName).toBe('bash');
-    expect(String(toolCallPart.input)).toContain('Math.random');
+    expect(toolCallPart.toolCallId).toBe("toolu_stream_1");
+    expect(toolCallPart.toolName).toBe("bash");
+    expect(String(toolCallPart.input)).toContain("Math.random");
 
-    const toolInputEndPart = parts.find(part => {
+    const toolInputEndPart = parts.find((part) => {
       return (
-        typeof part === 'object' &&
+        typeof part === "object" &&
         part !== null &&
-        'type' in part &&
-        part.type === 'tool-input-end'
+        "type" in part &&
+        part.type === "tool-input-end"
       );
     });
 
     expect(toolInputEndPart).toBeDefined();
 
-    const errorPart = parts.find(part => {
-      return (
-        typeof part === 'object' &&
-        part !== null &&
-        'type' in part &&
-        part.type === 'error'
-      );
+    const errorPart = parts.find((part) => {
+      return typeof part === "object" && part !== null && "type" in part && part.type === "error";
     });
 
     expect(errorPart).toBeUndefined();
 
-    const finishPart = parts.find(part => {
-      return (
-        typeof part === 'object' &&
-        part !== null &&
-        'type' in part &&
-        part.type === 'finish'
-      );
+    const finishPart = parts.find((part) => {
+      return typeof part === "object" && part !== null && "type" in part && part.type === "finish";
     });
 
     expect(finishPart).toBeDefined();
 
-    if (
-      typeof finishPart !== 'object' ||
-      finishPart === null ||
-      !('finishReason' in finishPart)
-    ) {
+    if (typeof finishPart !== "object" || finishPart === null || !("finishReason" in finishPart)) {
       return;
     }
 
     const finishReason = finishPart.finishReason;
     if (
-      typeof finishReason !== 'object' ||
+      typeof finishReason !== "object" ||
       finishReason === null ||
-      !('unified' in finishReason) ||
-      !('raw' in finishReason)
+      !("unified" in finishReason) ||
+      !("raw" in finishReason)
     ) {
       return;
     }
 
-    expect(finishReason.unified).toBe('tool-calls');
-    expect(finishReason.raw).toBe('tool_use');
+    expect(finishReason.unified).toBe("tool-calls");
+    expect(finishReason.raw).toBe("tool_use");
   });
 
-  test('tool mode emits tool-call when stream ends at tool_use without result message', async () => {
-    mock.module('@anthropic-ai/claude-agent-sdk', () => {
+  test("tool mode emits tool-call when stream ends at tool_use without result message", async () => {
+    mock.module("@anthropic-ai/claude-agent-sdk", () => {
       return {
         query: async function* () {
           yield {
-            type: 'stream_event',
+            type: "stream_event",
             event: {
-              type: 'message_start',
+              type: "message_start",
               message: {
-                id: 'msg-tool-no-result',
-                model: 'mock-model',
+                id: "msg-tool-no-result",
+                model: "mock-model",
               },
             },
           };
 
           yield {
-            type: 'stream_event',
+            type: "stream_event",
             event: {
-              type: 'content_block_start',
+              type: "content_block_start",
               index: 0,
               content_block: {
-                type: 'tool_use',
-                id: 'toolu_no_result_stream_1',
-                name: 'mcp__ai_sdk_tool_bridge__bash',
+                type: "tool_use",
+                id: "toolu_no_result_stream_1",
+                name: "mcp__ai_sdk_tool_bridge__bash",
               },
             },
           };
 
           yield {
-            type: 'stream_event',
+            type: "stream_event",
             event: {
-              type: 'content_block_delta',
+              type: "content_block_delta",
               index: 0,
               delta: {
-                type: 'input_json_delta',
+                type: "input_json_delta",
                 partial_json:
-                  '{"command":"bun -e \\\"console.log(Math.random())\\\"","description":"Run Math.random once"}',
+                  '{"command":"bun -e \\"console.log(Math.random())\\"","description":"Run Math.random once"}',
               },
             },
           };
 
           yield {
-            type: 'stream_event',
+            type: "stream_event",
             event: {
-              type: 'content_block_stop',
+              type: "content_block_stop",
               index: 0,
             },
           };
 
           yield {
-            type: 'stream_event',
+            type: "stream_event",
             event: {
-              type: 'message_delta',
+              type: "message_delta",
               delta: {
-                stop_reason: 'tool_use',
+                stop_reason: "tool_use",
               },
               usage: {
                 input_tokens: 10,
@@ -827,34 +848,34 @@ describe('stream bridge contract', () => {
     const moduleId = `../index.ts?stream-contract-tool-no-result-${Date.now()}-${Math.random()}`;
     const { anthropic } = await import(moduleId);
 
-    const streamResult = await anthropic('claude-3-5-haiku-latest').doStream({
+    const streamResult = await anthropic("claude-3-5-haiku-latest").doStream({
       prompt: [
         {
-          role: 'user',
-          content: [{ type: 'text', text: 'call bash' }],
+          role: "user",
+          content: [{ type: "text", text: "call bash" }],
         },
       ],
       tools: [
         {
-          type: 'function',
-          name: 'bash',
-          description: 'Run shell command',
+          type: "function",
+          name: "bash",
+          description: "Run shell command",
           inputSchema: {
-            type: 'object',
+            type: "object",
             additionalProperties: false,
-            required: ['command', 'description'],
+            required: ["command", "description"],
             properties: {
               command: {
-                type: 'string',
+                type: "string",
               },
               description: {
-                type: 'string',
+                type: "string",
               },
             },
           },
         },
       ],
-      toolChoice: { type: 'required' },
+      toolChoice: { type: "required" },
     });
 
     const parts: unknown[] = [];
@@ -862,116 +883,104 @@ describe('stream bridge contract', () => {
       parts.push(part);
     }
 
-    const toolCallPart = parts.find(part => {
+    const toolCallPart = parts.find((part) => {
       return (
-        typeof part === 'object' &&
-        part !== null &&
-        'type' in part &&
-        part.type === 'tool-call'
+        typeof part === "object" && part !== null && "type" in part && part.type === "tool-call"
       );
     });
 
     expect(toolCallPart).toBeDefined();
 
     if (
-      typeof toolCallPart !== 'object' ||
+      typeof toolCallPart !== "object" ||
       toolCallPart === null ||
-      !('toolCallId' in toolCallPart) ||
-      !('toolName' in toolCallPart) ||
-      !('input' in toolCallPart)
+      !("toolCallId" in toolCallPart) ||
+      !("toolName" in toolCallPart) ||
+      !("input" in toolCallPart)
     ) {
       return;
     }
 
-    expect(toolCallPart.toolCallId).toBe('toolu_no_result_stream_1');
-    expect(toolCallPart.toolName).toBe('bash');
-    expect(String(toolCallPart.input)).toContain('Math.random');
+    expect(toolCallPart.toolCallId).toBe("toolu_no_result_stream_1");
+    expect(toolCallPart.toolName).toBe("bash");
+    expect(String(toolCallPart.input)).toContain("Math.random");
 
-    const finishPart = parts.find(part => {
-      return (
-        typeof part === 'object' &&
-        part !== null &&
-        'type' in part &&
-        part.type === 'finish'
-      );
+    const finishPart = parts.find((part) => {
+      return typeof part === "object" && part !== null && "type" in part && part.type === "finish";
     });
 
     expect(finishPart).toBeDefined();
 
-    if (
-      typeof finishPart !== 'object' ||
-      finishPart === null ||
-      !('finishReason' in finishPart)
-    ) {
+    if (typeof finishPart !== "object" || finishPart === null || !("finishReason" in finishPart)) {
       return;
     }
 
     const finishReason = finishPart.finishReason;
     if (
-      typeof finishReason !== 'object' ||
+      typeof finishReason !== "object" ||
       finishReason === null ||
-      !('unified' in finishReason) ||
-      !('raw' in finishReason)
+      !("unified" in finishReason) ||
+      !("raw" in finishReason)
     ) {
       return;
     }
 
-    expect(finishReason.unified).toBe('tool-calls');
-    expect(finishReason.raw).toBe('tool_use');
+    expect(finishReason.unified).toBe("tool-calls");
+    expect(finishReason.raw).toBe("tool_use");
   });
 
-  test('tool mode emits tool-call from legacy single-call JSON text', async () => {
-    mock.module('@anthropic-ai/claude-agent-sdk', () => {
+  test("tool mode emits tool-call from legacy single-call JSON text", async () => {
+    mock.module("@anthropic-ai/claude-agent-sdk", () => {
       return {
         query: async function* () {
           yield {
-            type: 'stream_event',
+            type: "stream_event",
             event: {
-              type: 'message_start',
+              type: "message_start",
               message: {
-                id: 'msg-tool-legacy-call',
-                model: 'mock-model',
+                id: "msg-tool-legacy-call",
+                model: "mock-model",
               },
             },
           };
 
           yield {
-            type: 'stream_event',
+            type: "stream_event",
             event: {
-              type: 'content_block_start',
+              type: "content_block_start",
               index: 0,
               content_block: {
-                type: 'text',
+                type: "text",
               },
             },
           };
 
           yield {
-            type: 'stream_event',
+            type: "stream_event",
             event: {
-              type: 'content_block_delta',
+              type: "content_block_delta",
               index: 0,
               delta: {
-                type: 'text_delta',
-                text: '{"tool":"bash","parameters":{"command":"bun -e \\\"console.log(Math.random())\\\"","description":"Run Math.random once"}}',
+                type: "text_delta",
+                text: '{"tool":"bash","parameters":{"command":"bun -e \\"console.log(Math.random())\\"","description":"Run Math.random once"}}',
               },
             },
           };
 
           yield {
-            type: 'stream_event',
+            type: "stream_event",
             event: {
-              type: 'content_block_stop',
+              type: "content_block_stop",
               index: 0,
             },
           };
 
           yield {
-            type: 'stream_event',
+            type: "stream_event",
             event: {
-              type: 'message_delta',
+              type: "message_delta",
               delta: {
-                stop_reason: 'end_turn',
+                stop_reason: "end_turn",
               },
               usage: {
                 input_tokens: 10,
@@ -983,10 +992,10 @@ describe('stream bridge contract', () => {
           };
 
           yield {
-            type: 'result',
-            subtype: 'success',
-            stop_reason: 'end_turn',
-            result: 'done',
+            type: "result",
+            subtype: "success",
+            stop_reason: "end_turn",
+            result: "done",
             usage: buildMockResultUsage(),
           };
         },
@@ -996,34 +1005,34 @@ describe('stream bridge contract', () => {
     const moduleId = `../index.ts?stream-contract-tool-legacy-call-${Date.now()}-${Math.random()}`;
     const { anthropic } = await import(moduleId);
 
-    const streamResult = await anthropic('claude-3-5-haiku-latest').doStream({
+    const streamResult = await anthropic("claude-3-5-haiku-latest").doStream({
       prompt: [
         {
-          role: 'user',
-          content: [{ type: 'text', text: 'call bash' }],
+          role: "user",
+          content: [{ type: "text", text: "call bash" }],
         },
       ],
       tools: [
         {
-          type: 'function',
-          name: 'bash',
-          description: 'Run shell command',
+          type: "function",
+          name: "bash",
+          description: "Run shell command",
           inputSchema: {
-            type: 'object',
+            type: "object",
             additionalProperties: false,
-            required: ['command', 'description'],
+            required: ["command", "description"],
             properties: {
               command: {
-                type: 'string',
+                type: "string",
               },
               description: {
-                type: 'string',
+                type: "string",
               },
             },
           },
         },
       ],
-      toolChoice: { type: 'required' },
+      toolChoice: { type: "required" },
     });
 
     const parts: unknown[] = [];
@@ -1031,51 +1040,48 @@ describe('stream bridge contract', () => {
       parts.push(part);
     }
 
-    const toolCallPart = parts.find(part => {
+    const toolCallPart = parts.find((part) => {
       return (
-        typeof part === 'object' &&
-        part !== null &&
-        'type' in part &&
-        part.type === 'tool-call'
+        typeof part === "object" && part !== null && "type" in part && part.type === "tool-call"
       );
     });
 
     expect(toolCallPart).toBeDefined();
 
     if (
-      typeof toolCallPart !== 'object' ||
+      typeof toolCallPart !== "object" ||
       toolCallPart === null ||
-      !('toolName' in toolCallPart) ||
-      !('input' in toolCallPart)
+      !("toolName" in toolCallPart) ||
+      !("input" in toolCallPart)
     ) {
       return;
     }
 
-    expect(toolCallPart.toolName).toBe('bash');
-    expect(String(toolCallPart.input)).toContain('Math.random');
+    expect(toolCallPart.toolName).toBe("bash");
+    expect(String(toolCallPart.input)).toContain("Math.random");
   });
 
-  test('tool mode emits explicit error when model returns empty successful output', async () => {
-    mock.module('@anthropic-ai/claude-agent-sdk', () => {
+  test("tool mode emits explicit error when model returns empty successful output", async () => {
+    mock.module("@anthropic-ai/claude-agent-sdk", () => {
       return {
         query: async function* () {
           yield {
-            type: 'stream_event',
+            type: "stream_event",
             event: {
-              type: 'message_start',
+              type: "message_start",
               message: {
-                id: 'msg-tool-empty',
-                model: 'mock-model',
+                id: "msg-tool-empty",
+                model: "mock-model",
               },
             },
           };
 
           yield {
-            type: 'stream_event',
+            type: "stream_event",
             event: {
-              type: 'message_delta',
+              type: "message_delta",
               delta: {
-                stop_reason: 'end_turn',
+                stop_reason: "end_turn",
               },
               usage: {
                 input_tokens: 10,
@@ -1087,10 +1093,10 @@ describe('stream bridge contract', () => {
           };
 
           yield {
-            type: 'result',
-            subtype: 'success',
-            stop_reason: 'end_turn',
-            result: '',
+            type: "result",
+            subtype: "success",
+            stop_reason: "end_turn",
+            result: "",
             usage: buildMockResultUsage(),
           };
         },
@@ -1100,31 +1106,31 @@ describe('stream bridge contract', () => {
     const moduleId = `../index.ts?stream-contract-tool-empty-${Date.now()}-${Math.random()}`;
     const { anthropic } = await import(moduleId);
 
-    const streamResult = await anthropic('claude-3-5-haiku-latest').doStream({
+    const streamResult = await anthropic("claude-3-5-haiku-latest").doStream({
       prompt: [
         {
-          role: 'user',
-          content: [{ type: 'text', text: 'call tool' }],
+          role: "user",
+          content: [{ type: "text", text: "call tool" }],
         },
       ],
       tools: [
         {
-          type: 'function',
-          name: 'lookup_weather',
-          description: 'Lookup weather',
+          type: "function",
+          name: "lookup_weather",
+          description: "Lookup weather",
           inputSchema: {
-            type: 'object',
+            type: "object",
             additionalProperties: false,
-            required: ['city'],
+            required: ["city"],
             properties: {
               city: {
-                type: 'string',
+                type: "string",
               },
             },
           },
         },
       ],
-      toolChoice: { type: 'required' },
+      toolChoice: { type: "required" },
     });
 
     const parts: unknown[] = [];
@@ -1132,112 +1138,94 @@ describe('stream bridge contract', () => {
       parts.push(part);
     }
 
-    const errorPart = parts.find(part => {
-      return (
-        typeof part === 'object' &&
-        part !== null &&
-        'type' in part &&
-        part.type === 'error'
-      );
+    const errorPart = parts.find((part) => {
+      return typeof part === "object" && part !== null && "type" in part && part.type === "error";
     });
 
     expect(errorPart).toBeDefined();
 
-    if (
-      typeof errorPart !== 'object' ||
-      errorPart === null ||
-      !('error' in errorPart)
-    ) {
+    if (typeof errorPart !== "object" || errorPart === null || !("error" in errorPart)) {
       return;
     }
 
-    expect(String(errorPart.error)).toContain('Tool routing produced no tool call');
+    expect(String(errorPart.error)).toContain("Tool routing produced no tool call");
 
-    const finishPart = parts.find(part => {
-      return (
-        typeof part === 'object' &&
-        part !== null &&
-        'type' in part &&
-        part.type === 'finish'
-      );
+    const finishPart = parts.find((part) => {
+      return typeof part === "object" && part !== null && "type" in part && part.type === "finish";
     });
 
     expect(finishPart).toBeDefined();
 
-    if (
-      typeof finishPart !== 'object' ||
-      finishPart === null ||
-      !('finishReason' in finishPart)
-    ) {
+    if (typeof finishPart !== "object" || finishPart === null || !("finishReason" in finishPart)) {
       return;
     }
 
     const finishReason = finishPart.finishReason;
     if (
-      typeof finishReason !== 'object' ||
+      typeof finishReason !== "object" ||
       finishReason === null ||
-      !('unified' in finishReason) ||
-      !('raw' in finishReason)
+      !("unified" in finishReason) ||
+      !("raw" in finishReason)
     ) {
       return;
     }
 
-    expect(finishReason.unified).toBe('error');
-    expect(finishReason.raw).toBe('empty-tool-routing-output');
+    expect(finishReason.unified).toBe("error");
+    expect(finishReason.raw).toBe("empty-tool-routing-output");
   });
 
-  test('tool mode recovers from structured output retry exhaustion when text is recoverable', async () => {
-    mock.module('@anthropic-ai/claude-agent-sdk', () => {
+  test("tool mode recovers from structured output retry exhaustion when text is recoverable", async () => {
+    mock.module("@anthropic-ai/claude-agent-sdk", () => {
       return {
         query: async function* () {
           yield {
-            type: 'stream_event',
+            type: "stream_event",
             event: {
-              type: 'message_start',
+              type: "message_start",
               message: {
-                id: 'msg-retry-recovered',
-                model: 'mock-model',
+                id: "msg-retry-recovered",
+                model: "mock-model",
               },
             },
           };
 
           yield {
-            type: 'stream_event',
+            type: "stream_event",
             event: {
-              type: 'content_block_start',
+              type: "content_block_start",
               index: 0,
               content_block: {
-                type: 'text',
+                type: "text",
               },
             },
           };
 
           yield {
-            type: 'stream_event',
+            type: "stream_event",
             event: {
-              type: 'content_block_delta',
+              type: "content_block_delta",
               index: 0,
               delta: {
-                type: 'text_delta',
+                type: "text_delta",
                 text: '{"type":"text","text":"안녕하세요"}',
               },
             },
           };
 
           yield {
-            type: 'stream_event',
+            type: "stream_event",
             event: {
-              type: 'content_block_stop',
+              type: "content_block_stop",
               index: 0,
             },
           };
 
           yield {
-            type: 'stream_event',
+            type: "stream_event",
             event: {
-              type: 'message_delta',
+              type: "message_delta",
               delta: {
-                stop_reason: 'end_turn',
+                stop_reason: "end_turn",
               },
               usage: {
                 input_tokens: 10,
@@ -1249,9 +1237,9 @@ describe('stream bridge contract', () => {
           };
 
           yield {
-            type: 'result',
-            subtype: 'error_max_structured_output_retries',
-            stop_reason: 'end_turn',
+            type: "result",
+            subtype: "error_max_structured_output_retries",
+            stop_reason: "end_turn",
             duration_ms: 1,
             duration_api_ms: 1,
             is_error: true,
@@ -1260,11 +1248,9 @@ describe('stream bridge contract', () => {
             usage: buildMockResultUsage(),
             modelUsage: {},
             permission_denials: [],
-            errors: [
-              '[{"expected":"string","code":"invalid_type","path":["reason"]}]',
-            ],
-            uuid: 'uuid-1',
-            session_id: 'session-1',
+            errors: ['[{"expected":"string","code":"invalid_type","path":["reason"]}]'],
+            uuid: "uuid-1",
+            session_id: "session-1",
           };
         },
       };
@@ -1273,31 +1259,31 @@ describe('stream bridge contract', () => {
     const moduleId = `../index.ts?stream-contract-retry-recovered-${Date.now()}-${Math.random()}`;
     const { anthropic } = await import(moduleId);
 
-    const streamResult = await anthropic('claude-3-5-haiku-latest').doStream({
+    const streamResult = await anthropic("claude-3-5-haiku-latest").doStream({
       prompt: [
         {
-          role: 'user',
-          content: [{ type: 'text', text: 'hello' }],
+          role: "user",
+          content: [{ type: "text", text: "hello" }],
         },
       ],
       tools: [
         {
-          type: 'function',
-          name: 'lookup_weather',
-          description: 'Lookup weather',
+          type: "function",
+          name: "lookup_weather",
+          description: "Lookup weather",
           inputSchema: {
-            type: 'object',
+            type: "object",
             additionalProperties: false,
-            required: ['city'],
+            required: ["city"],
             properties: {
               city: {
-                type: 'string',
+                type: "string",
               },
             },
           },
         },
       ],
-      toolChoice: { type: 'required' },
+      toolChoice: { type: "required" },
     });
 
     const parts: unknown[] = [];
@@ -1305,66 +1291,41 @@ describe('stream bridge contract', () => {
       parts.push(part);
     }
 
-    const errorPart = parts.find(part => {
-      return (
-        typeof part === 'object' &&
-        part !== null &&
-        'type' in part &&
-        part.type === 'error'
-      );
+    const errorPart = parts.find((part) => {
+      return typeof part === "object" && part !== null && "type" in part && part.type === "error";
     });
 
     expect(errorPart).toBeUndefined();
 
-    const textDelta = parts.find(part => {
+    const textDelta = parts.find((part) => {
       return (
-        typeof part === 'object' &&
-        part !== null &&
-        'type' in part &&
-        part.type === 'text-delta'
+        typeof part === "object" && part !== null && "type" in part && part.type === "text-delta"
       );
     });
 
     expect(textDelta).toBeDefined();
 
-    if (
-      typeof textDelta !== 'object' ||
-      textDelta === null ||
-      !('delta' in textDelta)
-    ) {
+    if (typeof textDelta !== "object" || textDelta === null || !("delta" in textDelta)) {
       return;
     }
 
-    expect(textDelta.delta).toBe('안녕하세요');
+    expect(textDelta.delta).toBe("안녕하세요");
 
-    const finishPart = parts.find(part => {
-      return (
-        typeof part === 'object' &&
-        part !== null &&
-        'type' in part &&
-        part.type === 'finish'
-      );
+    const finishPart = parts.find((part) => {
+      return typeof part === "object" && part !== null && "type" in part && part.type === "finish";
     });
 
     expect(finishPart).toBeDefined();
 
-    if (
-      typeof finishPart !== 'object' ||
-      finishPart === null ||
-      !('finishReason' in finishPart)
-    ) {
+    if (typeof finishPart !== "object" || finishPart === null || !("finishReason" in finishPart)) {
       return;
     }
 
     const finishReason = finishPart.finishReason;
-    if (
-      typeof finishReason !== 'object' ||
-      finishReason === null ||
-      !('unified' in finishReason)
-    ) {
+    if (typeof finishReason !== "object" || finishReason === null || !("unified" in finishReason)) {
       return;
     }
 
-    expect(finishReason.unified).toBe('stop');
+    expect(finishReason.unified).toBe("stop");
   });
 });

@@ -1,4 +1,8 @@
-import { describe, expect, mock, test } from 'bun:test';
+import { afterEach, describe, expect, mock, test } from "bun:test";
+
+afterEach(() => {
+  mock.restore();
+});
 
 const buildMockResultUsage = () => {
   return {
@@ -9,16 +13,16 @@ const buildMockResultUsage = () => {
   };
 };
 
-describe('v2 entry compatibility contract', () => {
-  test('doGenerate adds legacy finish/reason fields', async () => {
-    mock.module('@anthropic-ai/claude-agent-sdk', () => {
+describe("v2 entry compatibility contract", () => {
+  test("doGenerate adds legacy finish/reason fields", async () => {
+    mock.module("@anthropic-ai/claude-agent-sdk", () => {
       return {
         query: async function* () {
           yield {
-            type: 'result',
-            subtype: 'success',
-            stop_reason: 'end_turn',
-            result: 'ok',
+            type: "result",
+            subtype: "success",
+            stop_reason: "end_turn",
+            result: "ok",
             usage: buildMockResultUsage(),
             duration_ms: 1,
             duration_api_ms: 1,
@@ -27,8 +31,8 @@ describe('v2 entry compatibility contract', () => {
             total_cost_usd: 0,
             modelUsage: {},
             permission_denials: [],
-            uuid: 'uuid-v2-generate',
-            session_id: 'session-v2-generate',
+            uuid: "uuid-v2-generate",
+            session_id: "session-v2-generate",
           };
         },
       };
@@ -37,84 +41,84 @@ describe('v2 entry compatibility contract', () => {
     const moduleId = `../v2.ts?v2-generate-${Date.now()}-${Math.random()}`;
     const { anthropic } = await import(moduleId);
 
-    const model = anthropic('claude-3-5-haiku-latest');
-    expect(model.specificationVersion).toBe('v2');
+    const model = anthropic("claude-3-5-haiku-latest");
+    expect(model.specificationVersion).toBe("v2");
 
     const result = await model.doGenerate({
       prompt: [
         {
-          role: 'user',
-          content: [{ type: 'text', text: 'hello' }],
+          role: "user",
+          content: [{ type: "text", text: "hello" }],
         },
       ],
     });
 
-    expect(result.finishReason).toBe('stop');
-    expect('rawFinishReason' in result).toBeTrue();
+    expect(result.finishReason).toBe("stop");
+    expect("rawFinishReason" in result).toBeTrue();
 
-    expect('finish' in result).toBeTrue();
-    expect('reason' in result).toBeTrue();
+    expect("finish" in result).toBeTrue();
+    expect("reason" in result).toBeTrue();
 
-    if (!('finish' in result) || !('reason' in result)) {
+    if (!("finish" in result) || !("reason" in result)) {
       return;
     }
 
-    expect(result.finish).toBe('stop');
-    expect(result.reason).toBe('end_turn');
+    expect(result.finish).toBe("stop");
+    expect(result.reason).toBe("end_turn");
   });
 
-  test('doStream finish part adds legacy finish/reason fields', async () => {
-    mock.module('@anthropic-ai/claude-agent-sdk', () => {
+  test("doStream finish part adds legacy finish/reason fields", async () => {
+    mock.module("@anthropic-ai/claude-agent-sdk", () => {
       return {
         query: async function* () {
           yield {
-            type: 'stream_event',
+            type: "stream_event",
             event: {
-              type: 'message_start',
+              type: "message_start",
               message: {
-                id: 'msg-v2',
-                model: 'mock-model',
+                id: "msg-v2",
+                model: "mock-model",
               },
             },
           };
 
           yield {
-            type: 'stream_event',
+            type: "stream_event",
             event: {
-              type: 'content_block_start',
+              type: "content_block_start",
               index: 0,
               content_block: {
-                type: 'text',
+                type: "text",
               },
             },
           };
 
           yield {
-            type: 'stream_event',
+            type: "stream_event",
             event: {
-              type: 'content_block_delta',
+              type: "content_block_delta",
               index: 0,
               delta: {
-                type: 'text_delta',
-                text: 'hello',
+                type: "text_delta",
+                text: "hello",
               },
             },
           };
 
           yield {
-            type: 'stream_event',
+            type: "stream_event",
             event: {
-              type: 'content_block_stop',
+              type: "content_block_stop",
               index: 0,
             },
           };
 
           yield {
-            type: 'stream_event',
+            type: "stream_event",
             event: {
-              type: 'message_delta',
+              type: "message_delta",
               delta: {
-                stop_reason: 'end_turn',
+                stop_reason: "end_turn",
               },
               usage: {
                 input_tokens: 10,
@@ -126,10 +130,10 @@ describe('v2 entry compatibility contract', () => {
           };
 
           yield {
-            type: 'result',
-            subtype: 'success',
-            stop_reason: 'end_turn',
-            result: 'done',
+            type: "result",
+            subtype: "success",
+            stop_reason: "end_turn",
+            result: "done",
             usage: buildMockResultUsage(),
             duration_ms: 1,
             duration_api_ms: 1,
@@ -138,8 +142,8 @@ describe('v2 entry compatibility contract', () => {
             total_cost_usd: 0,
             modelUsage: {},
             permission_denials: [],
-            uuid: 'uuid-v2-stream',
-            session_id: 'session-v2-stream',
+            uuid: "uuid-v2-stream",
+            session_id: "session-v2-stream",
           };
         },
       };
@@ -148,14 +152,14 @@ describe('v2 entry compatibility contract', () => {
     const moduleId = `../v2.ts?v2-stream-${Date.now()}-${Math.random()}`;
     const { anthropic } = await import(moduleId);
 
-    const model = anthropic('claude-3-5-haiku-latest');
-    expect(model.specificationVersion).toBe('v2');
+    const model = anthropic("claude-3-5-haiku-latest");
+    expect(model.specificationVersion).toBe("v2");
 
     const streamResult = await model.doStream({
       prompt: [
         {
-          role: 'user',
-          content: [{ type: 'text', text: 'hello' }],
+          role: "user",
+          content: [{ type: "text", text: "hello" }],
         },
       ],
     });
@@ -165,41 +169,36 @@ describe('v2 entry compatibility contract', () => {
       parts.push(part);
     }
 
-    const finishPart = parts.find(part => {
-      return (
-        typeof part === 'object' &&
-        part !== null &&
-        'type' in part &&
-        part.type === 'finish'
-      );
+    const finishPart = parts.find((part) => {
+      return typeof part === "object" && part !== null && "type" in part && part.type === "finish";
     });
 
     expect(finishPart).toBeDefined();
 
     if (
-      typeof finishPart !== 'object' ||
+      typeof finishPart !== "object" ||
       finishPart === null ||
-      !('finishReason' in finishPart) ||
-      !('finish' in finishPart) ||
-      !('reason' in finishPart)
+      !("finishReason" in finishPart) ||
+      !("finish" in finishPart) ||
+      !("reason" in finishPart)
     ) {
       return;
     }
 
-    expect(finishPart.finishReason).toBe('stop');
-    expect(finishPart.finish).toBe('stop');
-    expect(finishPart.reason).toBe('end_turn');
+    expect(finishPart.finishReason).toBe("stop");
+    expect(finishPart.finish).toBe("stop");
+    expect(finishPart.reason).toBe("end_turn");
   });
 
-  test('doGenerate maps empty tool routing output to legacy error fields', async () => {
-    mock.module('@anthropic-ai/claude-agent-sdk', () => {
+  test("doGenerate maps empty tool routing output to legacy error fields", async () => {
+    mock.module("@anthropic-ai/claude-agent-sdk", () => {
       return {
         query: async function* () {
           yield {
-            type: 'result',
-            subtype: 'success',
-            stop_reason: 'end_turn',
-            result: '',
+            type: "result",
+            subtype: "success",
+            stop_reason: "end_turn",
+            result: "",
             usage: buildMockResultUsage(),
             duration_ms: 1,
             duration_api_ms: 1,
@@ -208,8 +207,8 @@ describe('v2 entry compatibility contract', () => {
             total_cost_usd: 0,
             modelUsage: {},
             permission_denials: [],
-            uuid: 'uuid-v2-empty-generate',
-            session_id: 'session-v2-empty-generate',
+            uuid: "uuid-v2-empty-generate",
+            session_id: "session-v2-empty-generate",
           };
         },
       };
@@ -218,53 +217,53 @@ describe('v2 entry compatibility contract', () => {
     const moduleId = `../v2.ts?v2-empty-generate-${Date.now()}-${Math.random()}`;
     const { anthropic } = await import(moduleId);
 
-    const result = await anthropic('claude-3-5-haiku-latest').doGenerate({
+    const result = await anthropic("claude-3-5-haiku-latest").doGenerate({
       prompt: [
         {
-          role: 'user',
-          content: [{ type: 'text', text: 'call tool' }],
+          role: "user",
+          content: [{ type: "text", text: "call tool" }],
         },
       ],
       tools: [
         {
-          type: 'function',
-          name: 'lookup_weather',
-          description: 'Lookup weather',
+          type: "function",
+          name: "lookup_weather",
+          description: "Lookup weather",
           inputSchema: {
-            type: 'object',
+            type: "object",
             additionalProperties: false,
-            required: ['city'],
+            required: ["city"],
             properties: {
               city: {
-                type: 'string',
+                type: "string",
               },
             },
           },
         },
       ],
-      toolChoice: { type: 'required' },
+      toolChoice: { type: "required" },
     });
 
-    expect(result.finishReason).toBe('error');
-    expect(result.finish).toBe('error');
-    expect(result.reason).toBe('empty-tool-routing-output');
-    expect(result.rawFinishReason).toBe('empty-tool-routing-output');
+    expect(result.finishReason).toBe("error");
+    expect(result.finish).toBe("error");
+    expect(result.reason).toBe("empty-tool-routing-output");
+    expect(result.rawFinishReason).toBe("empty-tool-routing-output");
   });
 
-  test('doGenerate maps legacy single tool-call object to tool-calls', async () => {
-    mock.module('@anthropic-ai/claude-agent-sdk', () => {
+  test("doGenerate maps legacy single tool-call object to tool-calls", async () => {
+    mock.module("@anthropic-ai/claude-agent-sdk", () => {
       return {
         query: async function* () {
           yield {
-            type: 'result',
-            subtype: 'success',
-            stop_reason: 'end_turn',
-            result: '',
+            type: "result",
+            subtype: "success",
+            stop_reason: "end_turn",
+            result: "",
             structured_output: {
-              tool: 'bash',
+              tool: "bash",
               parameters: {
                 command: 'bun -e "console.log(Math.random())"',
-                description: 'Run Math.random once',
+                description: "Run Math.random once",
               },
             },
             usage: buildMockResultUsage(),
@@ -275,8 +274,8 @@ describe('v2 entry compatibility contract', () => {
             total_cost_usd: 0,
             modelUsage: {},
             permission_denials: [],
-            uuid: 'uuid-v2-legacy-tool-generate',
-            session_id: 'session-v2-legacy-tool-generate',
+            uuid: "uuid-v2-legacy-tool-generate",
+            session_id: "session-v2-legacy-tool-generate",
           };
         },
       };
@@ -285,65 +284,65 @@ describe('v2 entry compatibility contract', () => {
     const moduleId = `../v2.ts?v2-legacy-tool-generate-${Date.now()}-${Math.random()}`;
     const { anthropic } = await import(moduleId);
 
-    const result = await anthropic('claude-3-5-haiku-latest').doGenerate({
+    const result = await anthropic("claude-3-5-haiku-latest").doGenerate({
       prompt: [
         {
-          role: 'user',
-          content: [{ type: 'text', text: 'call bash' }],
+          role: "user",
+          content: [{ type: "text", text: "call bash" }],
         },
       ],
       tools: [
         {
-          type: 'function',
-          name: 'bash',
-          description: 'Run shell command',
+          type: "function",
+          name: "bash",
+          description: "Run shell command",
           inputSchema: {
-            type: 'object',
+            type: "object",
             additionalProperties: false,
-            required: ['command', 'description'],
+            required: ["command", "description"],
             properties: {
               command: {
-                type: 'string',
+                type: "string",
               },
               description: {
-                type: 'string',
+                type: "string",
               },
             },
           },
         },
       ],
-      toolChoice: { type: 'required' },
+      toolChoice: { type: "required" },
     });
 
-    expect(result.finishReason).toBe('tool-calls');
-    expect(result.finish).toBe('tool-calls');
-    expect(result.reason).toBe('tool_use');
+    expect(result.finishReason).toBe("tool-calls");
+    expect(result.finish).toBe("tool-calls");
+    expect(result.reason).toBe("tool_use");
 
     const firstContentPart = result.content[0];
-    expect(firstContentPart?.type).toBe('tool-call');
+    expect(firstContentPart?.type).toBe("tool-call");
 
-    if (firstContentPart === undefined || firstContentPart.type !== 'tool-call') {
+    if (firstContentPart === undefined || firstContentPart.type !== "tool-call") {
       return;
     }
 
-    expect(firstContentPart.toolName).toBe('bash');
+    expect(firstContentPart.toolName).toBe("bash");
   });
 
-  test('doGenerate maps native MCP tool-use error_max_turns to tool-calls', async () => {
-    mock.module('@anthropic-ai/claude-agent-sdk', () => {
+  test("doGenerate maps native MCP tool-use error_max_turns to tool-calls", async () => {
+    mock.module("@anthropic-ai/claude-agent-sdk", () => {
       return {
         query: async function* () {
           yield {
-            type: 'assistant',
+            type: "assistant",
             message: {
               content: [
                 {
-                  type: 'tool_use',
-                  id: 'toolu_v2_native_1',
-                  name: 'mcp__ai_sdk_tool_bridge__bash',
+                  type: "tool_use",
+                  id: "toolu_v2_native_1",
+                  name: "mcp__ai_sdk_tool_bridge__bash",
                   input: {
                     command: 'bun -e "console.log(Math.random())"',
-                    description: 'Run Math.random once',
+                    description: "Run Math.random once",
                   },
                 },
               ],
@@ -351,8 +350,8 @@ describe('v2 entry compatibility contract', () => {
           };
 
           yield {
-            type: 'result',
-            subtype: 'error_max_turns',
+            type: "result",
+            subtype: "error_max_turns",
             stop_reason: null,
             duration_ms: 1,
             duration_api_ms: 1,
@@ -363,8 +362,8 @@ describe('v2 entry compatibility contract', () => {
             modelUsage: {},
             permission_denials: [],
             errors: [],
-            uuid: 'uuid-v2-native-tool-generate',
-            session_id: 'session-v2-native-tool-generate',
+            uuid: "uuid-v2-native-tool-generate",
+            session_id: "session-v2-native-tool-generate",
           };
         },
       };
@@ -373,106 +372,105 @@ describe('v2 entry compatibility contract', () => {
     const moduleId = `../v2.ts?v2-native-tool-generate-${Date.now()}-${Math.random()}`;
     const { anthropic } = await import(moduleId);
 
-    const result = await anthropic('claude-3-5-haiku-latest').doGenerate({
+    const result = await anthropic("claude-3-5-haiku-latest").doGenerate({
       prompt: [
         {
-          role: 'user',
-          content: [{ type: 'text', text: 'call bash' }],
+          role: "user",
+          content: [{ type: "text", text: "call bash" }],
         },
       ],
       tools: [
         {
-          type: 'function',
-          name: 'bash',
-          description: 'Run shell command',
+          type: "function",
+          name: "bash",
+          description: "Run shell command",
           inputSchema: {
-            type: 'object',
+            type: "object",
             additionalProperties: false,
-            required: ['command', 'description'],
+            required: ["command", "description"],
             properties: {
               command: {
-                type: 'string',
+                type: "string",
               },
               description: {
-                type: 'string',
+                type: "string",
               },
             },
           },
         },
       ],
-      toolChoice: { type: 'required' },
+      toolChoice: { type: "required" },
     });
 
-    expect(result.finishReason).toBe('tool-calls');
-    expect(result.finish).toBe('tool-calls');
-    expect(result.reason).toBe('tool_use');
+    expect(result.finishReason).toBe("tool-calls");
+    expect(result.finish).toBe("tool-calls");
+    expect(result.reason).toBe("tool_use");
 
     const firstContentPart = result.content[0];
-    expect(firstContentPart?.type).toBe('tool-call');
+    expect(firstContentPart?.type).toBe("tool-call");
 
-    if (firstContentPart === undefined || firstContentPart.type !== 'tool-call') {
+    if (firstContentPart === undefined || firstContentPart.type !== "tool-call") {
       return;
     }
 
-    expect(firstContentPart.toolCallId).toBe('toolu_v2_native_1');
-    expect(firstContentPart.toolName).toBe('bash');
+    expect(firstContentPart.toolCallId).toBe("toolu_v2_native_1");
+    expect(firstContentPart.toolName).toBe("bash");
   });
 
-  test('doGenerate maps stream-only tool_use (no result message) to tool-calls', async () => {
-    mock.module('@anthropic-ai/claude-agent-sdk', () => {
+  test("doGenerate maps stream-only tool_use (no result message) to tool-calls", async () => {
+    mock.module("@anthropic-ai/claude-agent-sdk", () => {
       return {
         query: async function* () {
           yield {
-            type: 'stream_event',
+            type: "stream_event",
             event: {
-              type: 'message_start',
+              type: "message_start",
               message: {
-                id: 'msg-v2-no-result',
-                model: 'mock-model',
+                id: "msg-v2-no-result",
+                model: "mock-model",
               },
             },
           };
 
           yield {
-            type: 'stream_event',
+            type: "stream_event",
             event: {
-              type: 'content_block_start',
+              type: "content_block_start",
               index: 0,
               content_block: {
-                type: 'tool_use',
-                id: 'toolu_v2_no_result_1',
-                name: 'mcp__ai_sdk_tool_bridge__bash',
+                type: "tool_use",
+                id: "toolu_v2_no_result_1",
+                name: "mcp__ai_sdk_tool_bridge__bash",
               },
             },
           };
 
           yield {
-            type: 'stream_event',
+            type: "stream_event",
             event: {
-              type: 'content_block_delta',
+              type: "content_block_delta",
               index: 0,
               delta: {
-                type: 'input_json_delta',
-                partial_json:
-                  '{"command":"whoami","description":"현재 사용자 확인"}',
+                type: "input_json_delta",
+                partial_json: '{"command":"whoami","description":"현재 사용자 확인"}',
               },
             },
           };
 
           yield {
-            type: 'stream_event',
+            type: "stream_event",
             event: {
-              type: 'content_block_stop',
+              type: "content_block_stop",
               index: 0,
             },
           };
 
           yield {
-            type: 'stream_event',
+            type: "stream_event",
             event: {
-              type: 'message_delta',
+              type: "message_delta",
               delta: {
-                stop_reason: 'tool_use',
+                stop_reason: "tool_use",
               },
               usage: {
                 input_tokens: 10,
@@ -489,73 +487,73 @@ describe('v2 entry compatibility contract', () => {
     const moduleId = `../v2.ts?v2-no-result-generate-${Date.now()}-${Math.random()}`;
     const { anthropic } = await import(moduleId);
 
-    const result = await anthropic('claude-3-5-haiku-latest').doGenerate({
+    const result = await anthropic("claude-3-5-haiku-latest").doGenerate({
       prompt: [
         {
-          role: 'user',
-          content: [{ type: 'text', text: 'call bash' }],
+          role: "user",
+          content: [{ type: "text", text: "call bash" }],
         },
       ],
       tools: [
         {
-          type: 'function',
-          name: 'bash',
-          description: 'Run shell command',
+          type: "function",
+          name: "bash",
+          description: "Run shell command",
           inputSchema: {
-            type: 'object',
+            type: "object",
             additionalProperties: false,
-            required: ['command', 'description'],
+            required: ["command", "description"],
             properties: {
               command: {
-                type: 'string',
+                type: "string",
               },
               description: {
-                type: 'string',
+                type: "string",
               },
             },
           },
         },
       ],
-      toolChoice: { type: 'required' },
+      toolChoice: { type: "required" },
     });
 
-    expect(result.finishReason).toBe('tool-calls');
-    expect(result.finish).toBe('tool-calls');
-    expect(result.reason).toBe('tool_use');
+    expect(result.finishReason).toBe("tool-calls");
+    expect(result.finish).toBe("tool-calls");
+    expect(result.reason).toBe("tool_use");
 
     const firstContentPart = result.content[0];
-    expect(firstContentPart?.type).toBe('tool-call');
+    expect(firstContentPart?.type).toBe("tool-call");
 
-    if (firstContentPart === undefined || firstContentPart.type !== 'tool-call') {
+    if (firstContentPart === undefined || firstContentPart.type !== "tool-call") {
       return;
     }
 
-    expect(firstContentPart.toolCallId).toBe('toolu_v2_no_result_1');
-    expect(firstContentPart.toolName).toBe('bash');
-    expect(firstContentPart.input).toContain('whoami');
+    expect(firstContentPart.toolCallId).toBe("toolu_v2_no_result_1");
+    expect(firstContentPart.toolName).toBe("bash");
+    expect(firstContentPart.input).toContain("whoami");
   });
 
-  test('doStream maps empty tool routing output to legacy error fields', async () => {
-    mock.module('@anthropic-ai/claude-agent-sdk', () => {
+  test("doStream maps empty tool routing output to legacy error fields", async () => {
+    mock.module("@anthropic-ai/claude-agent-sdk", () => {
       return {
         query: async function* () {
           yield {
-            type: 'stream_event',
+            type: "stream_event",
             event: {
-              type: 'message_start',
+              type: "message_start",
               message: {
-                id: 'msg-v2-empty',
-                model: 'mock-model',
+                id: "msg-v2-empty",
+                model: "mock-model",
               },
             },
           };
 
           yield {
-            type: 'stream_event',
+            type: "stream_event",
             event: {
-              type: 'message_delta',
+              type: "message_delta",
               delta: {
-                stop_reason: 'end_turn',
+                stop_reason: "end_turn",
               },
               usage: {
                 input_tokens: 10,
@@ -567,10 +565,10 @@ describe('v2 entry compatibility contract', () => {
           };
 
           yield {
-            type: 'result',
-            subtype: 'success',
-            stop_reason: 'end_turn',
-            result: '',
+            type: "result",
+            subtype: "success",
+            stop_reason: "end_turn",
+            result: "",
             usage: buildMockResultUsage(),
             duration_ms: 1,
             duration_api_ms: 1,
@@ -579,8 +577,8 @@ describe('v2 entry compatibility contract', () => {
             total_cost_usd: 0,
             modelUsage: {},
             permission_denials: [],
-            uuid: 'uuid-v2-empty-stream',
-            session_id: 'session-v2-empty-stream',
+            uuid: "uuid-v2-empty-stream",
+            session_id: "session-v2-empty-stream",
           };
         },
       };
@@ -589,31 +587,31 @@ describe('v2 entry compatibility contract', () => {
     const moduleId = `../v2.ts?v2-empty-stream-${Date.now()}-${Math.random()}`;
     const { anthropic } = await import(moduleId);
 
-    const streamResult = await anthropic('claude-3-5-haiku-latest').doStream({
+    const streamResult = await anthropic("claude-3-5-haiku-latest").doStream({
       prompt: [
         {
-          role: 'user',
-          content: [{ type: 'text', text: 'call tool' }],
+          role: "user",
+          content: [{ type: "text", text: "call tool" }],
         },
       ],
       tools: [
         {
-          type: 'function',
-          name: 'lookup_weather',
-          description: 'Lookup weather',
+          type: "function",
+          name: "lookup_weather",
+          description: "Lookup weather",
           inputSchema: {
-            type: 'object',
+            type: "object",
             additionalProperties: false,
-            required: ['city'],
+            required: ["city"],
             properties: {
               city: {
-                type: 'string',
+                type: "string",
               },
             },
           },
         },
       ],
-      toolChoice: { type: 'required' },
+      toolChoice: { type: "required" },
     });
 
     const parts: unknown[] = [];
@@ -621,29 +619,24 @@ describe('v2 entry compatibility contract', () => {
       parts.push(part);
     }
 
-    const finishPart = parts.find(part => {
-      return (
-        typeof part === 'object' &&
-        part !== null &&
-        'type' in part &&
-        part.type === 'finish'
-      );
+    const finishPart = parts.find((part) => {
+      return typeof part === "object" && part !== null && "type" in part && part.type === "finish";
     });
 
     expect(finishPart).toBeDefined();
 
     if (
-      typeof finishPart !== 'object' ||
+      typeof finishPart !== "object" ||
       finishPart === null ||
-      !('finishReason' in finishPart) ||
-      !('finish' in finishPart) ||
-      !('reason' in finishPart)
+      !("finishReason" in finishPart) ||
+      !("finish" in finishPart) ||
+      !("reason" in finishPart)
     ) {
       return;
     }
 
-    expect(finishPart.finishReason).toBe('error');
-    expect(finishPart.finish).toBe('error');
-    expect(finishPart.reason).toBe('empty-tool-routing-output');
+    expect(finishPart.finishReason).toBe("error");
+    expect(finishPart.finish).toBe("error");
+    expect(finishPart.reason).toBe("empty-tool-routing-output");
   });
 });
