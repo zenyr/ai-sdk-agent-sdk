@@ -1,15 +1,8 @@
-import {
-  InvalidArgumentError,
-  type LanguageModelV3,
-  NoSuchModelError,
-} from "@ai-sdk/provider";
-import { anthropic as upstreamAnthropic } from "@ai-sdk/anthropic";
+import { type AnthropicProvider, anthropic as upstreamAnthropic } from "@ai-sdk/anthropic";
+import { InvalidArgumentError, type LanguageModelV3, NoSuchModelError } from "@ai-sdk/provider";
 import { generateId } from "@ai-sdk/provider-utils";
 
-import {
-  type AnthropicProvider,
-  type AnthropicProviderSettings,
-} from "@ai-sdk/anthropic";
+import type { AgentSdkProviderSettings } from "../shared/tool-executor";
 
 import { AgentSdkAnthropicLanguageModel } from "./agent-sdk-language-model";
 
@@ -17,7 +10,7 @@ const anthropicTools = upstreamAnthropic.tools;
 
 const createLanguageModelFactory = (args: {
   providerName: string;
-  settings: AnthropicProviderSettings;
+  settings: AgentSdkProviderSettings;
   idGenerator: () => string;
 }) => {
   return (modelId: string): LanguageModelV3 => {
@@ -26,13 +19,13 @@ const createLanguageModelFactory = (args: {
       provider: args.providerName,
       settings: args.settings,
       idGenerator: args.idGenerator,
+      toolExecutors: args.settings.toolExecutors,
+      maxTurns: args.settings.maxTurns,
     });
   };
 };
 
-export const createAnthropic = (
-  options: AnthropicProviderSettings = {},
-): AnthropicProvider => {
+export const createAnthropic = (options: AgentSdkProviderSettings = {}): AnthropicProvider => {
   if (
     typeof options.apiKey === "string" &&
     options.apiKey.length > 0 &&
@@ -51,8 +44,7 @@ export const createAnthropic = (
       ? options.name
       : "anthropic.messages";
 
-  const idGenerator =
-    typeof options.generateId === "function" ? options.generateId : generateId;
+  const idGenerator = typeof options.generateId === "function" ? options.generateId : generateId;
 
   const createLanguageModel = createLanguageModelFactory({
     providerName,

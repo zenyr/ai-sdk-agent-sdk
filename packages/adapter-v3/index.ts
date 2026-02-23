@@ -1,12 +1,5 @@
 import type { AnthropicLanguageModelOptions } from "@ai-sdk/anthropic";
 
-export {
-  VERSION,
-  anthropic,
-  createAnthropic,
-  forwardAnthropicContainerIdFromLastStep,
-} from "ai-sdk-agent-sdk";
-
 export type {
   AnthropicLanguageModelOptions,
   AnthropicMessageMetadata,
@@ -15,5 +8,16 @@ export type {
   AnthropicToolOptions,
   AnthropicUsageIteration,
 } from "@ai-sdk/anthropic";
+export type {
+  AgentSdkProviderSettings,
+  ToolExecutor,
+  ToolExecutorMap,
+} from "ai-sdk-agent-sdk";
+export {
+  anthropic,
+  createAnthropic,
+  forwardAnthropicContainerIdFromLastStep,
+  VERSION,
+} from "ai-sdk-agent-sdk";
 
 export type AnthropicProviderOptions = AnthropicLanguageModelOptions;

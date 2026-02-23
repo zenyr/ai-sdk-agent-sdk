@@ -1,5 +1,6 @@
 import type { AnthropicProviderSettings } from "@ai-sdk/anthropic";
 import type {
+  JSONObject,
   LanguageModelV3,
   LanguageModelV3CallOptions,
   LanguageModelV3Content,
@@ -8,10 +9,8 @@ import type {
   LanguageModelV3StreamPart,
   LanguageModelV3StreamResult,
   SharedV3Warning,
-  JSONObject,
 } from "@ai-sdk/provider";
 import { withoutTrailingSlash } from "@ai-sdk/provider-utils";
-import * as agentSdk from "@anthropic-ai/claude-agent-sdk";
 import type {
   Options as AgentQueryOptions,
   SDKAssistantMessage,
@@ -19,28 +18,25 @@ import type {
   SDKPartialAssistantMessage,
   SDKResultMessage,
 } from "@anthropic-ai/claude-agent-sdk";
+import * as agentSdk from "@anthropic-ai/claude-agent-sdk";
 
-import {
-  buildCompletionMode,
-} from "../bridge/completion-mode";
+import { buildCompletionMode } from "../bridge/completion-mode";
 import {
   collectWarnings,
-  parseStructuredEnvelopeFromUnknown,
-  parseStructuredEnvelopeFromText,
   isStructuredTextEnvelope,
   isStructuredToolEnvelope,
   mapStructuredToolCallsToContent,
   parseAnthropicProviderOptions,
+  parseStructuredEnvelopeFromText,
+  parseStructuredEnvelopeFromUnknown,
 } from "../bridge/parse-utils";
 import {
+  extractSystemPromptFromMessages,
   joinSerializedPromptMessages,
   serializePromptMessages,
+  serializePromptMessagesWithoutSystem,
 } from "../bridge/prompt-serializer";
-import {
-  buildProviderMetadata,
-  mapFinishReason,
-  mapUsage,
-} from "../bridge/result-mapping";
+import { buildProviderMetadata, mapFinishReason, mapUsage } from "../bridge/result-mapping";
 import {
   appendStreamPartsFromRawEvent,
   closePendingStreamBlocks,
@@ -53,11 +49,10 @@ import {
   type StreamBlockState,
   type StreamEventState,
 } from "../shared/stream-types";
+import type { ToolExecutorMap } from "../shared/tool-executor";
 import { isRecord, readString, safeJsonStringify } from "../shared/type-readers";
 
-const isAssistantMessage = (
-  message: SDKMessage,
-): message is SDKAssistantMessage => {
+const isAssistantMessage = (message: SDKMessage): message is SDKAssistantMessage => {
   return message.type === "assistant";
 };
 
@@ -65,15 +60,11 @@ const isResultMessage = (message: SDKMessage): message is SDKResultMessage => {
   return message.type === "result";
 };
 
-const isPartialAssistantMessage = (
-  message: SDKMessage,
-): message is SDKPartialAssistantMessage => {
+const isPartialAssistantMessage = (message: SDKMessage): message is SDKPartialAssistantMessage => {
   return message.type === "stream_event";
 };
 
-const extractAssistantText = (
-  assistantMessage: SDKAssistantMessage | undefined,
-): string => {
+const extractAssistantText = (assistantMessage: SDKAssistantMessage | undefined): string => {
   if (assistantMessage === undefined) {
     return "";
   }
@@ -113,21 +104,21 @@ const readNonEmptyString = (value: unknown): string | undefined => {
   return value;
 };
 
-const isStructuredOutputRetryExhausted = (
-  resultMessage: SDKResultMessage,
-): boolean => {
+const isStructuredOutputRetryExhausted = (resultMessage: SDKResultMessage): boolean => {
   return resultMessage.subtype === "error_max_structured_output_retries";
 };
 
 const EMPTY_TOOL_ROUTING_OUTPUT_ERROR = "empty-tool-routing-output";
-const EMPTY_TOOL_ROUTING_OUTPUT_TEXT =
-  "Tool routing produced no tool call or text response.";
+const EMPTY_TOOL_ROUTING_OUTPUT_TEXT = "Tool routing produced no tool call or text response.";
 const TOOL_BRIDGE_SERVER_NAME = "ai_sdk_tool_bridge";
 const TOOL_BRIDGE_NAME_PREFIX = `mcp__${TOOL_BRIDGE_SERVER_NAME}__`;
 
 type ToolBridgeConfig = {
   allowedTools: string[];
   mcpServers: NonNullable<AgentQueryOptions["mcpServers"]>;
+  hasAnyExecutor: boolean;
+  allToolsHaveExecutors: boolean;
+  missingExecutorToolNames: string[];
 };
 
 type PromptSessionState = {
@@ -174,10 +165,7 @@ const normalizeToolInputJson = (value: string): string => {
   }
 };
 
-const hasSerializedPromptPrefix = (
-  prefix: string[],
-  target: string[],
-): boolean => {
+const hasSerializedPromptPrefix = (prefix: string[], target: string[]): boolean => {
   if (prefix.length > target.length) {
     return false;
   }
@@ -191,10 +179,7 @@ const hasSerializedPromptPrefix = (
   return true;
 };
 
-const hasIdenticalSerializedPrompt = (
-  source: string[],
-  target: string[],
-): boolean => {
+const hasIdenticalSerializedPrompt = (source: string[], target: string[]): boolean => {
   if (source.length !== target.length) {
     return false;
   }
@@ -226,8 +211,7 @@ const findBestPromptSessionState = (args: {
 
     if (
       bestState === undefined ||
-      sessionState.serializedPromptMessages.length >
-        bestState.serializedPromptMessages.length
+      sessionState.serializedPromptMessages.length > bestState.serializedPromptMessages.length
     ) {
       bestState = sessionState;
     }
@@ -251,10 +235,7 @@ const mergePromptSessionState = (args: {
     );
   });
 
-  return [args.nextSessionState, ...dedupedStates].slice(
-    0,
-    MAX_PROMPT_SESSION_STATES,
-  );
+  return [args.nextSessionState, ...dedupedStates].slice(0, MAX_PROMPT_SESSION_STATES);
 };
 
 const buildPromptQueryInput = (args: {
@@ -262,7 +243,10 @@ const buildPromptQueryInput = (args: {
   previousSessionStates: PromptSessionState[];
 }): PromptQueryInput => {
   const serializedPromptMessages = serializePromptMessages(args.promptMessages);
-  const fullPrompt = joinSerializedPromptMessages(serializedPromptMessages);
+  const serializedPromptMessagesForQuery = serializePromptMessagesWithoutSystem(
+    args.promptMessages,
+  );
+  const fullPrompt = joinSerializedPromptMessages(serializedPromptMessagesForQuery);
   const previousSessionState = findBestPromptSessionState({
     serializedPromptMessages,
     previousSessionStates: args.previousSessionStates,
@@ -283,10 +267,7 @@ const buildPromptQueryInput = (args: {
     };
   }
 
-  const appendedPromptMessages = serializedPromptMessages.slice(
-    previousPromptMessages.length,
-  );
-
+  const appendedPromptMessages = serializedPromptMessages.slice(previousPromptMessages.length);
   if (appendedPromptMessages.length === 0) {
     return {
       prompt: fullPrompt,
@@ -294,8 +275,19 @@ const buildPromptQueryInput = (args: {
     };
   }
 
+  const appendedSourceMessages = args.promptMessages.slice(previousPromptMessages.length);
+  const appendedPromptMessagesForQuery =
+    serializePromptMessagesWithoutSystem(appendedSourceMessages);
+
+  if (appendedPromptMessagesForQuery.length === 0) {
+    return {
+      prompt: fullPrompt,
+      serializedPromptMessages,
+    };
+  }
+
   return {
-    prompt: joinSerializedPromptMessages(appendedPromptMessages),
+    prompt: joinSerializedPromptMessages(appendedPromptMessagesForQuery),
     serializedPromptMessages,
     resumeSessionId: previousSessionState.sessionId,
   };
@@ -321,6 +313,7 @@ const readSessionIdFromQueryMessages = (args: {
 
 const buildToolBridgeConfig = (
   tools: Array<{ name: string; description?: string; inputSchema: unknown }>,
+  toolExecutors: ToolExecutorMap | undefined,
 ): ToolBridgeConfig | undefined => {
   if (tools.length === 0) {
     return undefined;
@@ -332,6 +325,26 @@ const buildToolBridgeConfig = (
   }
 
   const buildMcpTool = agentSdk.tool;
+
+  const stringifyToolExecutorOutput = (value: unknown): string => {
+    if (typeof value === "string") {
+      return value;
+    }
+
+    return safeJsonStringify(value);
+  };
+
+  const stringifyToolExecutorError = (error: unknown): string => {
+    if (error instanceof Error && error.message.length > 0) {
+      return error.message;
+    }
+
+    if (typeof error === "string" && error.length > 0) {
+      return error;
+    }
+
+    return safeJsonStringify(error);
+  };
 
   const buildDisabledHandler = async () => {
     return {
@@ -345,17 +358,54 @@ const buildToolBridgeConfig = (
     };
   };
 
+  const missingExecutorToolNames: string[] = [];
+  let hasAnyExecutor = false;
+
   const mcpTools = tools.map((toolDefinition) => {
-    const zodRawShape = buildZodRawShapeFromToolInputSchema(
-      toolDefinition.inputSchema,
-    );
+    const zodRawShape = buildZodRawShapeFromToolInputSchema(toolDefinition.inputSchema);
+    const toolExecutor = toolExecutors?.[toolDefinition.name];
+
+    if (toolExecutor !== undefined) {
+      hasAnyExecutor = true;
+    } else {
+      missingExecutorToolNames.push(toolDefinition.name);
+    }
+
+    const toolHandler =
+      toolExecutor === undefined
+        ? buildDisabledHandler
+        : async (args: unknown) => {
+            const input = isRecord(args) ? args : {};
+
+            try {
+              const output = await toolExecutor(input);
+              return {
+                content: [
+                  {
+                    type: "text",
+                    text: stringifyToolExecutorOutput(output),
+                  },
+                ],
+              };
+            } catch (error) {
+              return {
+                isError: true,
+                content: [
+                  {
+                    type: "text",
+                    text: stringifyToolExecutorError(error),
+                  },
+                ],
+              };
+            }
+          };
 
     if (typeof buildMcpTool === "function") {
       return buildMcpTool(
         toolDefinition.name,
         toolDefinition.description ?? "No description",
         zodRawShape,
-        buildDisabledHandler,
+        toolHandler,
       );
     }
 
@@ -363,7 +413,7 @@ const buildToolBridgeConfig = (
       name: toolDefinition.name,
       description: toolDefinition.description ?? "No description",
       inputSchema: zodRawShape,
-      handler: buildDisabledHandler,
+      handler: toolHandler,
     };
   });
 
@@ -379,6 +429,9 @@ const buildToolBridgeConfig = (
     mcpServers: {
       [TOOL_BRIDGE_SERVER_NAME]: mcpServer,
     },
+    hasAnyExecutor,
+    allToolsHaveExecutors: hasAnyExecutor && missingExecutorToolNames.length === 0,
+    missingExecutorToolNames,
   };
 };
 
@@ -457,10 +510,7 @@ const recoverToolModeContentFromAssistantText = (
   const parsedEnvelope = parseStructuredEnvelopeFromText(assistantText);
 
   if (isStructuredToolEnvelope(parsedEnvelope)) {
-    const toolCalls = mapStructuredToolCallsToContent(
-      parsedEnvelope.calls,
-      idGenerator,
-    );
+    const toolCalls = mapStructuredToolCallsToContent(parsedEnvelope.calls, idGenerator);
 
     if (toolCalls.length > 0) {
       return toolCalls;
@@ -474,9 +524,7 @@ const recoverToolModeContentFromAssistantText = (
   return [{ type: "text", text: assistantText }];
 };
 
-const buildQueryEnv = (
-  settings: AnthropicProviderSettings,
-): Record<string, string | undefined> => {
+const buildQueryEnv = (settings: AnthropicProviderSettings): Record<string, string | undefined> => {
   const env: Record<string, string | undefined> = {
     ...process.env,
   };
@@ -502,9 +550,7 @@ const buildQueryEnv = (
   return env;
 };
 
-const collectProviderSettingWarnings = (
-  settings: AnthropicProviderSettings,
-): SharedV3Warning[] => {
+const collectProviderSettingWarnings = (settings: AnthropicProviderSettings): SharedV3Warning[] => {
   const warnings: SharedV3Warning[] = [];
 
   const headers = settings.headers;
@@ -512,8 +558,7 @@ const collectProviderSettingWarnings = (
     warnings.push({
       type: "unsupported",
       feature: "providerSettings.headers",
-      details:
-        "createAnthropic({ headers }) is not forwarded on claude-agent-sdk backend.",
+      details: "createAnthropic({ headers }) is not forwarded on claude-agent-sdk backend.",
     });
   }
 
@@ -521,12 +566,21 @@ const collectProviderSettingWarnings = (
     warnings.push({
       type: "unsupported",
       feature: "providerSettings.fetch",
-      details:
-        "createAnthropic({ fetch }) is not forwarded on claude-agent-sdk backend.",
+      details: "createAnthropic({ fetch }) is not forwarded on claude-agent-sdk backend.",
     });
   }
 
   return warnings;
+};
+
+const buildPartialToolExecutorWarning = (missingExecutorToolNames: string[]): SharedV3Warning => {
+  return {
+    type: "compatibility",
+    feature: "toolExecutors.partial",
+    details:
+      `toolExecutors is missing handlers for: ${missingExecutorToolNames.join(", ")}. ` +
+      "Falling back to AI SDK tool loop with maxTurns=1.",
+  };
 };
 
 export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
@@ -537,6 +591,8 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
 
   private readonly settings: AnthropicProviderSettings;
   private readonly idGenerator: () => string;
+  private readonly toolExecutors: ToolExecutorMap | undefined;
+  private readonly maxTurns: number | undefined;
   private readonly providerSettingWarnings: SharedV3Warning[];
   private promptSessionStates: PromptSessionState[] = [];
 
@@ -545,36 +601,46 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
     provider: string;
     settings: AnthropicProviderSettings;
     idGenerator: () => string;
+    toolExecutors?: ToolExecutorMap;
+    maxTurns?: number;
   }) {
     this.modelId = args.modelId;
     this.provider = args.provider;
     this.settings = args.settings;
     this.idGenerator = args.idGenerator;
+    this.toolExecutors = args.toolExecutors;
+    this.maxTurns = args.maxTurns;
     this.providerSettingWarnings = collectProviderSettingWarnings(this.settings);
     this.supportedUrls = DEFAULT_SUPPORTED_URLS;
   }
 
-  async doGenerate(
-    options: LanguageModelV3CallOptions,
-  ): Promise<LanguageModelV3GenerateResult> {
+  async doGenerate(options: LanguageModelV3CallOptions): Promise<LanguageModelV3GenerateResult> {
     const completionMode = buildCompletionMode(options);
     const anthropicOptions = parseAnthropicProviderOptions(options);
-    const warnings = [
-      ...collectWarnings(options, completionMode),
-      ...this.providerSettingWarnings,
-    ];
+    const warnings = [...collectWarnings(options, completionMode), ...this.providerSettingWarnings];
 
     const promptQueryInput = buildPromptQueryInput({
       promptMessages: options.prompt,
       previousSessionStates: this.promptSessionStates,
     });
     const basePrompt = promptQueryInput.prompt;
+    const systemPrompt = extractSystemPromptFromMessages(options.prompt);
     let prompt = basePrompt;
     let outputFormat: AgentQueryOptions["outputFormat"];
     const toolBridgeConfig =
       completionMode.type === "tools"
-        ? buildToolBridgeConfig(completionMode.tools)
+        ? buildToolBridgeConfig(completionMode.tools, this.toolExecutors)
         : undefined;
+    const useNativeToolExecution =
+      completionMode.type === "tools" && toolBridgeConfig?.allToolsHaveExecutors === true;
+
+    if (
+      completionMode.type === "tools" &&
+      toolBridgeConfig?.hasAnyExecutor === true &&
+      !useNativeToolExecution
+    ) {
+      warnings.push(buildPartialToolExecutorWarning(toolBridgeConfig.missingExecutorToolNames));
+    }
 
     if (completionMode.type === "json") {
       prompt = `Return only JSON that matches the required schema.\n\n${basePrompt}`;
@@ -605,9 +671,10 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
       tools: [],
       allowedTools: toolBridgeConfig?.allowedTools ?? [],
       resume: promptQueryInput.resumeSessionId,
+      systemPrompt,
       permissionMode: "dontAsk",
       settingSources: [],
-      maxTurns: 1,
+      maxTurns: useNativeToolExecution ? this.maxTurns : 1,
       abortController,
       env: buildQueryEnv(this.settings),
       hooks: {},
@@ -628,10 +695,7 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
       latestStopReason: null,
       latestUsage: undefined,
     };
-    const pendingBridgeToolInputs = new Map<
-      string,
-      { toolName: string; deltas: string[] }
-    >();
+    const pendingBridgeToolInputs = new Map<string, { toolName: string; deltas: string[] }>();
     const recoveredToolCallsFromStream: LanguageModelV3Content[] = [];
 
     const appendRecoveredToolCall = (args: {
@@ -644,7 +708,7 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
         toolCallId: args.toolCallId,
         toolName: fromBridgeToolName(args.toolName),
         input: normalizeToolInputJson(args.rawInput),
-        providerExecuted: false,
+        providerExecuted: useNativeToolExecution,
       });
     };
 
@@ -654,14 +718,12 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
         options: queryOptions,
       })) {
         if (isPartialAssistantMessage(message)) {
-          const mappedParts = appendStreamPartsFromRawEvent(
-            message.event,
-            partialStreamState,
-          );
+          const mappedParts = appendStreamPartsFromRawEvent(message.event, partialStreamState);
 
           for (const mappedPart of mappedParts) {
             if (
               completionMode.type === "tools" &&
+              !useNativeToolExecution &&
               mappedPart.type === "tool-input-start" &&
               isBridgeToolName(mappedPart.toolName)
             ) {
@@ -674,11 +736,10 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
 
             if (
               completionMode.type === "tools" &&
+              !useNativeToolExecution &&
               mappedPart.type === "tool-input-delta"
             ) {
-              const pendingBridgeInput = pendingBridgeToolInputs.get(
-                mappedPart.id,
-              );
+              const pendingBridgeInput = pendingBridgeToolInputs.get(mappedPart.id);
 
               if (pendingBridgeInput !== undefined) {
                 pendingBridgeInput.deltas.push(mappedPart.delta);
@@ -689,11 +750,10 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
 
             if (
               completionMode.type === "tools" &&
+              !useNativeToolExecution &&
               mappedPart.type === "tool-input-end"
             ) {
-              const pendingBridgeInput = pendingBridgeToolInputs.get(
-                mappedPart.id,
-              );
+              const pendingBridgeInput = pendingBridgeToolInputs.get(mappedPart.id);
 
               if (pendingBridgeInput !== undefined) {
                 appendRecoveredToolCall({
@@ -723,6 +783,7 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
       for (const remainingPart of remainingParts) {
         if (
           completionMode.type === "tools" &&
+          !useNativeToolExecution &&
           remainingPart.type === "tool-input-end"
         ) {
           const pendingBridgeInput = pendingBridgeToolInputs.get(remainingPart.id);
@@ -740,10 +801,7 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
       }
     } finally {
       if (externalAbortSignal !== undefined) {
-        externalAbortSignal.removeEventListener(
-          "abort",
-          abortFromExternalSignal,
-        );
+        externalAbortSignal.removeEventListener("abort", abortFromExternalSignal);
       }
     }
 
@@ -763,7 +821,7 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
     }
 
     if (finalResultMessage === undefined) {
-      if (completionMode.type === "tools") {
+      if (completionMode.type === "tools" && !useNativeToolExecution) {
         if (recoveredToolCallsFromStream.length > 0) {
           return {
             content: recoveredToolCallsFromStream,
@@ -776,6 +834,7 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
             request: {
               body: {
                 prompt,
+                systemPrompt,
                 completionMode: completionMode.type,
               },
             },
@@ -803,6 +862,7 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
             request: {
               body: {
                 prompt,
+                systemPrompt,
                 completionMode: completionMode.type,
               },
             },
@@ -815,7 +875,7 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
       }
 
       return {
-        content: [{ type: "text", text: "" }],
+        content: [{ type: "text", text: extractAssistantText(lastAssistantMessage) }],
         finishReason: {
           unified: "error",
           raw: "agent-sdk-no-result",
@@ -831,6 +891,45 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
     let content: LanguageModelV3Content[] = [];
     let finishReason = mapFinishReason(finalResultMessage.stop_reason);
 
+    if (completionMode.type === "tools" && useNativeToolExecution) {
+      if (finalResultMessage.subtype === "success") {
+        const assistantText = extractAssistantText(lastAssistantMessage);
+        const text = assistantText.length > 0 ? assistantText : finalResultMessage.result;
+        content = [{ type: "text", text }];
+      } else {
+        const errorText = finalResultMessage.errors.join("\n");
+        content = [
+          {
+            type: "text",
+            text: errorText.length > 0 ? errorText : finalResultMessage.result,
+          },
+        ];
+        finishReason = {
+          unified: "error",
+          raw: finalResultMessage.subtype,
+        };
+      }
+
+      return {
+        content,
+        finishReason,
+        usage,
+        warnings,
+        providerMetadata,
+        request: {
+          body: {
+            prompt,
+            systemPrompt,
+            completionMode: completionMode.type,
+          },
+        },
+        response: {
+          modelId: this.modelId,
+          timestamp: new Date(),
+        },
+      };
+    }
+
     if (finalResultMessage.subtype === "success") {
       const structuredOutput = finalResultMessage.structured_output;
       const parsedStructuredOutput =
@@ -838,10 +937,7 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
           ? parseStructuredEnvelopeFromUnknown(structuredOutput)
           : undefined;
 
-      if (
-        completionMode.type === "tools" &&
-        isStructuredToolEnvelope(parsedStructuredOutput)
-      ) {
+      if (completionMode.type === "tools" && isStructuredToolEnvelope(parsedStructuredOutput)) {
         const toolCalls = mapStructuredToolCallsToContent(
           parsedStructuredOutput.calls,
           this.idGenerator,
@@ -893,9 +989,7 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
 
       if (content.length === 0 && completionMode.type === "json") {
         if (structuredOutput !== undefined) {
-          content = [
-            { type: "text", text: safeJsonStringify(structuredOutput) },
-          ];
+          content = [{ type: "text", text: safeJsonStringify(structuredOutput) }];
         }
       }
 
@@ -920,10 +1014,7 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
               }
             }
 
-            if (
-              content.length === 0 &&
-              isStructuredTextEnvelope(parsedEnvelope)
-            ) {
+            if (content.length === 0 && isStructuredTextEnvelope(parsedEnvelope)) {
               content = [{ type: "text", text: parsedEnvelope.text }];
             }
           }
@@ -940,10 +1031,7 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
     }
 
     if (finalResultMessage.subtype !== "success") {
-      if (
-        completionMode.type === "tools" &&
-        recoveredToolCallsFromStream.length > 0
-      ) {
+      if (completionMode.type === "tools" && recoveredToolCallsFromStream.length > 0) {
         content = recoveredToolCallsFromStream;
         finishReason = {
           unified: "tool-calls",
@@ -1027,6 +1115,7 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
       request: {
         body: {
           prompt,
+          systemPrompt,
           completionMode: completionMode.type,
         },
       },
@@ -1037,27 +1126,33 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
     };
   }
 
-  async doStream(
-    options: LanguageModelV3CallOptions,
-  ): Promise<LanguageModelV3StreamResult> {
+  async doStream(options: LanguageModelV3CallOptions): Promise<LanguageModelV3StreamResult> {
     const completionMode = buildCompletionMode(options);
     const anthropicOptions = parseAnthropicProviderOptions(options);
-    const warnings = [
-      ...collectWarnings(options, completionMode),
-      ...this.providerSettingWarnings,
-    ];
+    const warnings = [...collectWarnings(options, completionMode), ...this.providerSettingWarnings];
 
     const promptQueryInput = buildPromptQueryInput({
       promptMessages: options.prompt,
       previousSessionStates: this.promptSessionStates,
     });
     const basePrompt = promptQueryInput.prompt;
+    const systemPrompt = extractSystemPromptFromMessages(options.prompt);
     let prompt = basePrompt;
     let outputFormat: AgentQueryOptions["outputFormat"];
     const toolBridgeConfig =
       completionMode.type === "tools"
-        ? buildToolBridgeConfig(completionMode.tools)
+        ? buildToolBridgeConfig(completionMode.tools, this.toolExecutors)
         : undefined;
+    const useNativeToolExecution =
+      completionMode.type === "tools" && toolBridgeConfig?.allToolsHaveExecutors === true;
+
+    if (
+      completionMode.type === "tools" &&
+      toolBridgeConfig?.hasAnyExecutor === true &&
+      !useNativeToolExecution
+    ) {
+      warnings.push(buildPartialToolExecutorWarning(toolBridgeConfig.missingExecutorToolNames));
+    }
 
     if (completionMode.type === "json") {
       prompt = `Return only JSON that matches the required schema.\n\n${basePrompt}`;
@@ -1072,10 +1167,7 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
 
     const cleanupAbortListener = () => {
       if (externalAbortSignal !== undefined) {
-        externalAbortSignal.removeEventListener(
-          "abort",
-          abortFromExternalSignal,
-        );
+        externalAbortSignal.removeEventListener("abort", abortFromExternalSignal);
       }
     };
 
@@ -1098,9 +1190,10 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
       tools: [],
       allowedTools: toolBridgeConfig?.allowedTools ?? [],
       resume: promptQueryInput.resumeSessionId,
+      systemPrompt,
       permissionMode: "dontAsk",
       settingSources: [],
-      maxTurns: 1,
+      maxTurns: useNativeToolExecution ? this.maxTurns : 1,
       abortController,
       env: buildQueryEnv(this.settings),
       hooks: {},
@@ -1119,7 +1212,7 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
       latestStopReason: null,
       latestUsage: undefined,
     };
-    const shouldBufferToolModeText = completionMode.type === "tools";
+    const shouldBufferToolModeText = completionMode.type === "tools" && !useNativeToolExecution;
 
     const stream = new ReadableStream<LanguageModelV3StreamPart>({
       start: async (controller) => {
@@ -1128,10 +1221,7 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
         let emittedToolModeToolCalls = false;
         let emittedToolModeText = false;
         const bufferedToolModeText: string[] = [];
-        const pendingBridgeToolInputs = new Map<
-          string,
-          { toolName: string; deltas: string[] }
-        >();
+        const pendingBridgeToolInputs = new Map<string, { toolName: string; deltas: string[] }>();
 
         controller.enqueue({
           type: "stream-start",
@@ -1144,10 +1234,7 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
             options: queryOptions,
           })) {
             if (isPartialAssistantMessage(message)) {
-              const mappedParts = appendStreamPartsFromRawEvent(
-                message.event,
-                streamState,
-              );
+              const mappedParts = appendStreamPartsFromRawEvent(message.event, streamState);
 
               for (const mappedPart of mappedParts) {
                 if (
@@ -1160,7 +1247,7 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
                     id: mappedPart.id,
                     toolName: fromBridgeToolName(mappedPart.toolName),
                     providerMetadata: mappedPart.providerMetadata,
-                    providerExecuted: false,
+                    providerExecuted: useNativeToolExecution,
                     dynamic: mappedPart.dynamic,
                   });
 
@@ -1171,13 +1258,8 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
                   continue;
                 }
 
-                if (
-                  completionMode.type === "tools" &&
-                  mappedPart.type === "tool-input-delta"
-                ) {
-                  const pendingBridgeInput = pendingBridgeToolInputs.get(
-                    mappedPart.id,
-                  );
+                if (completionMode.type === "tools" && mappedPart.type === "tool-input-delta") {
+                  const pendingBridgeInput = pendingBridgeToolInputs.get(mappedPart.id);
 
                   if (pendingBridgeInput !== undefined) {
                     pendingBridgeInput.deltas.push(mappedPart.delta);
@@ -1186,27 +1268,20 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
                   }
                 }
 
-                if (
-                  completionMode.type === "tools" &&
-                  mappedPart.type === "tool-input-end"
-                ) {
-                  const pendingBridgeInput = pendingBridgeToolInputs.get(
-                    mappedPart.id,
-                  );
+                if (completionMode.type === "tools" && mappedPart.type === "tool-input-end") {
+                  const pendingBridgeInput = pendingBridgeToolInputs.get(mappedPart.id);
 
                   if (pendingBridgeInput !== undefined) {
                     controller.enqueue(mappedPart);
 
-                    const input = normalizeToolInputJson(
-                      pendingBridgeInput.deltas.join(""),
-                    );
+                    const input = normalizeToolInputJson(pendingBridgeInput.deltas.join(""));
 
                     controller.enqueue({
                       type: "tool-call",
                       toolCallId: mappedPart.id,
                       toolName: fromBridgeToolName(pendingBridgeInput.toolName),
                       input,
-                      providerExecuted: false,
+                      providerExecuted: useNativeToolExecution,
                     });
 
                     emittedToolModeToolCalls = true;
@@ -1252,27 +1327,20 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
 
           const remainingParts = closePendingStreamBlocks(streamState);
           for (const remainingPart of remainingParts) {
-            if (
-              completionMode.type === "tools" &&
-              remainingPart.type === "tool-input-end"
-            ) {
-              const pendingBridgeInput = pendingBridgeToolInputs.get(
-                remainingPart.id,
-              );
+            if (completionMode.type === "tools" && remainingPart.type === "tool-input-end") {
+              const pendingBridgeInput = pendingBridgeToolInputs.get(remainingPart.id);
 
               if (pendingBridgeInput !== undefined) {
                 controller.enqueue(remainingPart);
 
-                const input = normalizeToolInputJson(
-                  pendingBridgeInput.deltas.join(""),
-                );
+                const input = normalizeToolInputJson(pendingBridgeInput.deltas.join(""));
 
                 controller.enqueue({
                   type: "tool-call",
                   toolCallId: remainingPart.id,
                   toolName: fromBridgeToolName(pendingBridgeInput.toolName),
                   input,
-                  providerExecuted: false,
+                  providerExecuted: useNativeToolExecution,
                 });
 
                 emittedToolModeToolCalls = true;
@@ -1288,7 +1356,7 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
             controller.enqueue(remainingPart);
           }
 
-          if (completionMode.type === "tools") {
+          if (completionMode.type === "tools" && !useNativeToolExecution) {
             const bufferedText = bufferedToolModeText.join("");
             let parsedEnvelope: unknown;
 
@@ -1318,11 +1386,7 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
 
             if (isStructuredTextEnvelope(parsedEnvelope)) {
               if (!emittedToolModeToolCalls && parsedEnvelope.text.length > 0) {
-                enqueueSingleTextBlock(
-                  controller,
-                  this.idGenerator,
-                  parsedEnvelope.text,
-                );
+                enqueueSingleTextBlock(controller, this.idGenerator, parsedEnvelope.text);
                 emittedToolModeText = true;
               }
             }
@@ -1365,11 +1429,13 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
             if (finalResultMessage.subtype !== "success") {
               const canRecoverFromToolCallError =
                 completionMode.type === "tools" &&
+                !useNativeToolExecution &&
                 emittedToolModeToolCalls &&
                 finalResultMessage.subtype === "error_max_turns";
 
               const canRecoverFromStructuredOutputRetry =
                 completionMode.type === "tools" &&
+                !useNativeToolExecution &&
                 isStructuredOutputRetryExhausted(finalResultMessage) &&
                 (emittedToolModeToolCalls || emittedToolModeText);
 
@@ -1387,10 +1453,7 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
                 };
               }
 
-              if (
-                !canRecoverFromToolCallError &&
-                !canRecoverFromStructuredOutputRetry
-              ) {
+              if (!canRecoverFromToolCallError && !canRecoverFromStructuredOutputRetry) {
                 finishReason = {
                   unified: "error",
                   raw: finalResultMessage.subtype,
@@ -1419,7 +1482,12 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
             });
           }
 
-          if (emittedToolModeToolCalls && finishReason.unified !== "error") {
+          if (
+            completionMode.type === "tools" &&
+            !useNativeToolExecution &&
+            emittedToolModeToolCalls &&
+            finishReason.unified !== "error"
+          ) {
             finishReason = {
               unified: "tool-calls",
               raw: "tool_use",
@@ -1428,6 +1496,7 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
 
           if (
             completionMode.type === "tools" &&
+            !useNativeToolExecution &&
             !emittedToolModeToolCalls &&
             !emittedToolModeText &&
             finishReason.unified !== "error"
@@ -1488,6 +1557,7 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
       request: {
         body: {
           prompt,
+          systemPrompt,
           completionMode: completionMode.type,
         },
       },

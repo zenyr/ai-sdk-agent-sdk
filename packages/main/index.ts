@@ -1,9 +1,5 @@
 import type { AnthropicLanguageModelOptions } from "@ai-sdk/anthropic";
 
-export { VERSION } from "./shared/constants";
-export { anthropic, createAnthropic } from "./provider/create-anthropic";
-export { forwardAnthropicContainerIdFromLastStep } from "./provider/forward-container";
-
 export type {
   AnthropicLanguageModelOptions,
   AnthropicMessageMetadata,
@@ -12,5 +8,13 @@ export type {
   AnthropicToolOptions,
   AnthropicUsageIteration,
 } from "@ai-sdk/anthropic";
+export { anthropic, createAnthropic } from "./provider/create-anthropic";
+export { forwardAnthropicContainerIdFromLastStep } from "./provider/forward-container";
+export { VERSION } from "./shared/constants";
+export type {
+  AgentSdkProviderSettings,
+  ToolExecutor,
+  ToolExecutorMap,
+} from "./shared/tool-executor";
 
 export type AnthropicProviderOptions = AnthropicLanguageModelOptions;

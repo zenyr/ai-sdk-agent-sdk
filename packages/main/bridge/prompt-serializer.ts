@@ -19,20 +19,25 @@ export const contentPartToText = (part: unknown): string => {
   }
 
   if (type === "reasoning") {
-    const text = readString(part, "text");
-    return typeof text === "string" ? `[reasoning]\n${text}` : "[reasoning]";
+    return "";
   }
 
   if (type === "tool-call") {
     const toolName = readString(part, "toolName") ?? "unknown_tool";
+    const toolCallId = readString(part, "toolCallId");
+    const toolCallSuffix =
+      typeof toolCallId === "string" && toolCallId.length > 0 ? `#${toolCallId}` : "";
     const input = part.input;
-    return `[tool-call:${toolName}] ${safeJsonStringify(input)}`;
+    return `[tool-call:${toolName}${toolCallSuffix}] ${safeJsonStringify(input)}`;
   }
 
   if (type === "tool-result") {
     const toolName = readString(part, "toolName") ?? "unknown_tool";
+    const toolCallId = readString(part, "toolCallId");
+    const toolCallSuffix =
+      typeof toolCallId === "string" && toolCallId.length > 0 ? `#${toolCallId}` : "";
     const output = part.output;
-    return `[tool-result:${toolName}] ${safeJsonStringify(output)}`;
+    return `[tool-result:${toolName}${toolCallSuffix}] ${safeJsonStringify(output)}`;
   }
 
   return safeJsonStringify(part);
@@ -43,19 +48,51 @@ export const serializeMessage = (message: LanguageModelV3Message): string => {
     return `[system]\n${message.content}`;
   }
 
-  const serializedContent = message.content.map(contentPartToText).join("\n");
+  const serializedContent = message.content
+    .map(contentPartToText)
+    .filter((part) => {
+      return part.length > 0;
+    })
+    .join("\n");
   return `[${message.role}]\n${serializedContent}`;
 };
 
-export const serializePromptMessages = (
-  prompt: LanguageModelV3Message[],
-): string[] => {
+export const serializePromptMessages = (prompt: LanguageModelV3Message[]): string[] => {
   return prompt.map(serializeMessage);
 };
 
-export const joinSerializedPromptMessages = (
-  serializedMessages: string[],
-): string => {
+export const serializePromptMessagesWithoutSystem = (
+  prompt: LanguageModelV3Message[],
+): string[] => {
+  return prompt
+    .filter((message) => {
+      return message.role !== "system";
+    })
+    .map(serializeMessage);
+};
+
+export const extractSystemPromptFromMessages = (
+  prompt: LanguageModelV3Message[],
+): string | undefined => {
+  const systemParts = prompt
+    .filter((message) => {
+      return message.role === "system";
+    })
+    .map((message) => {
+      return message.content.trim();
+    })
+    .filter((content) => {
+      return content.length > 0;
+    });
+
+  if (systemParts.length === 0) {
+    return undefined;
+  }
+
+  return systemParts.join("\n\n");
+};
+
+export const joinSerializedPromptMessages = (serializedMessages: string[]): string => {
   return serializedMessages.join("\n\n");
 };
 

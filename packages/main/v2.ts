@@ -8,17 +8,14 @@ import type {
 } from "@ai-sdk/provider";
 
 import {
-  VERSION,
   anthropic as anthropicV3,
   createAnthropic as createAnthropicV3,
   forwardAnthropicContainerIdFromLastStep,
+  VERSION,
 } from "./index";
 
+import type { AgentSdkProviderSettings } from "./shared/tool-executor";
 import { isRecord } from "./shared/type-readers";
-
-import type {
-  AnthropicProviderSettings,
-} from "@ai-sdk/anthropic";
 
 type V2FinishReason =
   | "stop"
@@ -111,9 +108,7 @@ class AgentSdkAnthropicLanguageModelV2Adapter {
     this.supportedUrls = baseModel.supportedUrls;
   }
 
-  async doGenerate(
-    options: LanguageModelV3CallOptions,
-  ): Promise<LegacyGenerateResult> {
+  async doGenerate(options: LanguageModelV3CallOptions): Promise<LegacyGenerateResult> {
     const result = await this.baseModel.doGenerate(options);
     const finish = mapFinishReasonToV2(result.finishReason);
     const rawFinishReason = readRawFinishReason(result.finishReason);
@@ -130,9 +125,7 @@ class AgentSdkAnthropicLanguageModelV2Adapter {
     return legacyResult;
   }
 
-  async doStream(
-    options: LanguageModelV3CallOptions,
-  ): Promise<LanguageModelV3StreamResult> {
+  async doStream(options: LanguageModelV3CallOptions): Promise<LanguageModelV3StreamResult> {
     const streamResult = await this.baseModel.doStream(options);
 
     const stream = streamResult.stream.pipeThrough(
@@ -155,9 +148,7 @@ class AgentSdkAnthropicLanguageModelV2Adapter {
   }
 }
 
-const wrapProviderWithLegacyFinish = (
-  provider: ReturnType<typeof createAnthropicV3>,
-) => {
+const wrapProviderWithLegacyFinish = (provider: ReturnType<typeof createAnthropicV3>) => {
   const createLanguageModel = (modelId: string) => {
     return new AgentSdkAnthropicLanguageModelV2Adapter(provider(modelId));
   };
@@ -177,7 +168,7 @@ const wrapProviderWithLegacyFinish = (
 };
 
 export const createAnthropic = (
-  options: AnthropicProviderSettings = {},
+  options: AgentSdkProviderSettings = {},
 ): ReturnType<typeof createAnthropicV3> => {
   const provider = createAnthropicV3(options);
   return wrapProviderWithLegacyFinish(provider);
@@ -188,6 +179,7 @@ export const anthropic = wrapProviderWithLegacyFinish(anthropicV3);
 export { VERSION, forwardAnthropicContainerIdFromLastStep };
 
 export type {
+  AgentSdkProviderSettings,
   AnthropicLanguageModelOptions,
   AnthropicMessageMetadata,
   AnthropicProvider,
