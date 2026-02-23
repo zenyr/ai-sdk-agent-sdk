@@ -52,9 +52,10 @@ export const buildToolInstruction = (
   return [
     "You are in tool routing mode.",
     toolChoiceInstruction,
-    "Return strictly valid JSON and no markdown.",
-    'If a tool is needed, return {"type":"tool-calls","calls":[{"toolName":"...","input":{...}}]}.',
-    'If no tool is needed, return {"type":"text","text":"..."}.',
+    "Decide whether to answer directly or return tool calls.",
+    "When returning tool calls, ensure each input matches the tool schema.",
+    "Return exactly one JSON object that matches the schema.",
+    "Do not return an empty response.",
     "Available tools:",
     toolLines,
   ].join("\n");
@@ -70,9 +71,6 @@ export const buildToolSchema = (
           (toolDefinition) => toolDefinition.name === toolChoice.toolName,
         )
       : tools;
-
-  const requiresAtLeastOneCall =
-    toolChoice?.type === "required" || toolChoice?.type === "tool";
 
   const callVariants = filteredTools.map((toolDefinition) => {
     return {
@@ -95,7 +93,7 @@ export const buildToolSchema = (
         required: ["type", "text"],
         properties: {
           type: { const: "text" },
-          text: { type: "string" },
+          text: { type: "string", minLength: 1 },
         },
       },
       {
@@ -106,7 +104,7 @@ export const buildToolSchema = (
           type: { const: "tool-calls" },
           calls: {
             type: "array",
-            minItems: requiresAtLeastOneCall ? 1 : undefined,
+            minItems: 1,
             items:
               callVariants.length > 0
                 ? { oneOf: callVariants }

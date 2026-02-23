@@ -11,6 +11,12 @@
       "import": "./dist/index.js",
       "default": "./dist/index.js"
     },
+    "./v2": {
+      "bun": "./v2.ts",
+      "types": "./dist/v2.d.ts",
+      "import": "./dist/v2.js",
+      "default": "./dist/v2.js"
+    },
     "./bun": {
       "types": "./dist/index.d.ts",
       "bun": "./bun.ts",
@@ -20,12 +26,14 @@
   "files": [
     "dist",
     "index.ts",
+    "v2.ts",
     "bun.ts",
     "internal/anthropic-option-warnings.ts"
   ],
   "scripts": {
-    "build": "rm -rf ./dist && bun build ./index.ts --target=node --format=esm --outdir ./dist --external @ai-sdk/anthropic --external @ai-sdk/provider --external @ai-sdk/provider-utils --external @anthropic-ai/claude-agent-sdk",
+    "build": "rm -rf ./dist && bun build ./index.ts ./v2.ts --target=node --format=esm --outdir ./dist --external @ai-sdk/anthropic --external @ai-sdk/provider --external @ai-sdk/provider-utils --external @anthropic-ai/claude-agent-sdk",
     "test": "bun test",
+    "test:e2e": "AI_SDK_AGENT_E2E=1 bun test __tests__/e2e --timeout 120000",
     "lint": "biome check . --write --unsafe",
     "prepublishOnly": "bun run build"
   },
@@ -35,7 +43,8 @@
     "@ai-sdk/anthropic": "latest",
     "@ai-sdk/provider": "latest",
     "@ai-sdk/provider-utils": "latest",
-    "@anthropic-ai/claude-agent-sdk": "latest"
+    "@anthropic-ai/claude-agent-sdk": "latest",
+    "zod": "latest"
   },
   "devDependencies": {
     "@types/bun": "latest"

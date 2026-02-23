@@ -1,27 +1,38 @@
 # ADR-0004 Tooling Contract And Limitations
 
-- Status: Proposed
-- Date: 2026-02-22
+- Status: Accepted
+- Date: 2026-02-23
 
 ## Context
-- Upstream supports function tools and provider tools with rich behavior.
-- Current local implementation uses JSON envelope prompting for function tools.
-- Provider tools are exposed on surface but not fully executed through runtime bridge.
+- Upstream supports function tools and provider tools.
+- JSON-envelope prompt routing for function tools caused unstable behavior:
+  - model sometimes returned empty success output.
+  - model sometimes returned legacy single-call JSON shape.
+  - tool routing could stall in callers waiting for structured tool calls.
 
 ## Decision
-- Keep function tool support as first-class path.
-- For provider tools, avoid silent ignore:
-  - return explicit warning for degraded paths.
-  - return explicit error when behavior cannot be guaranteed.
-- Document exact tool mode behavior in parity matrix.
+- Use native in-process MCP bridge for AI SDK function tools.
+  - Build one SDK MCP server per query with `createSdkMcpServer`.
+  - Register each AI SDK function tool as MCP tool.
+  - Enable only bridge MCP tool names in `allowedTools`.
+  - Keep built-in Claude tools disabled (`tools: []`, isolated settings).
+- Keep legacy JSON envelope parser as compatibility fallback.
+- Treat `error_max_turns` with recovered native tool-use as successful tool-call output.
+- Keep explicit empty-tool-routing guard when no tool call and no text are recoverable.
 
 ## Consequences
 - Positive:
-  - less hidden mismatch.
-  - predictable failure behavior.
+  - tool routing matches native Claude tool-use events.
+  - fewer stalls from empty structured-output responses.
+  - v2 and v3 share same stable behavior via common provider path.
 - Negative:
-  - stricter behavior may break existing implicit assumptions.
+  - adapter now depends on MCP bridge behavior from claude-agent-sdk runtime.
+  - tool mode has more bridge logic to map MCP names back to AI SDK names.
 
 ## Validation
-- Tests cover function tool call path.
-- Tests cover provider tool degraded or unsupported path.
+- Contract tests for v3 generate/stream:
+  - native MCP tool-use recovery from `error_max_turns`.
+  - legacy JSON fallback recovery.
+  - explicit empty-output error path.
+- Contract tests for v2 adapter:
+  - legacy finish fields remain correct for recovered tool-call paths.

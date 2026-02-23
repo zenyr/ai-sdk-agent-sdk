@@ -144,5 +144,1131 @@ describe('stream bridge contract', () => {
     });
 
     expect(finishPart).toBeDefined();
+
+    if (
+      typeof finishPart !== 'object' ||
+      finishPart === null ||
+      !('finishReason' in finishPart)
+    ) {
+      return;
+    }
+
+    if (
+      typeof finishPart.finishReason !== 'object' ||
+      finishPart.finishReason === null ||
+      !('unified' in finishPart.finishReason)
+    ) {
+      return;
+    }
+
+    expect(typeof finishPart.finishReason.unified).toBe('string');
+  });
+
+  test('tool mode unwraps text envelope from buffered stream text', async () => {
+    mock.module('@anthropic-ai/claude-agent-sdk', () => {
+      return {
+        query: async function* () {
+          yield {
+            type: 'stream_event',
+            event: {
+              type: 'message_start',
+              message: {
+                id: 'msg-tool-text',
+                model: 'mock-model',
+              },
+            },
+          };
+
+          yield {
+            type: 'stream_event',
+            event: {
+              type: 'content_block_start',
+              index: 0,
+              content_block: {
+                type: 'text',
+              },
+            },
+          };
+
+          yield {
+            type: 'stream_event',
+            event: {
+              type: 'content_block_delta',
+              index: 0,
+              delta: {
+                type: 'text_delta',
+                text: '{"type":"text","text":"안녕하세요! 무엇을 도와드릴까요?"}',
+              },
+            },
+          };
+
+          yield {
+            type: 'stream_event',
+            event: {
+              type: 'content_block_stop',
+              index: 0,
+            },
+          };
+
+          yield {
+            type: 'stream_event',
+            event: {
+              type: 'message_delta',
+              delta: {
+                stop_reason: 'end_turn',
+              },
+              usage: {
+                input_tokens: 10,
+                output_tokens: 5,
+                cache_read_input_tokens: 0,
+                cache_creation_input_tokens: 0,
+              },
+            },
+          };
+
+          yield {
+            type: 'result',
+            subtype: 'success',
+            stop_reason: 'end_turn',
+            result: 'done',
+            usage: buildMockResultUsage(),
+          };
+        },
+      };
+    });
+
+    const moduleId = `../index.ts?stream-contract-tool-text-${Date.now()}-${Math.random()}`;
+    const { anthropic } = await import(moduleId);
+
+    const streamResult = await anthropic('claude-3-5-haiku-latest').doStream({
+      prompt: [
+        {
+          role: 'user',
+          content: [{ type: 'text', text: 'hello' }],
+        },
+      ],
+      tools: [
+        {
+          type: 'function',
+          name: 'lookup_weather',
+          description: 'Lookup weather',
+          inputSchema: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['city'],
+            properties: {
+              city: {
+                type: 'string',
+              },
+            },
+          },
+        },
+      ],
+      toolChoice: { type: 'required' },
+    });
+
+    const parts: unknown[] = [];
+    for await (const part of streamResult.stream) {
+      parts.push(part);
+    }
+
+    const textDeltas = parts.filter(part => {
+      return (
+        typeof part === 'object' &&
+        part !== null &&
+        'type' in part &&
+        part.type === 'text-delta'
+      );
+    });
+
+    expect(textDeltas.length).toBe(1);
+
+    const firstTextDelta = textDeltas[0];
+    if (
+      typeof firstTextDelta !== 'object' ||
+      firstTextDelta === null ||
+      !('delta' in firstTextDelta)
+    ) {
+      return;
+    }
+
+    expect(firstTextDelta.delta).toBe('안녕하세요! 무엇을 도와드릴까요?');
+  });
+
+  test('tool mode emits tool-call from buffered stream text envelope', async () => {
+    mock.module('@anthropic-ai/claude-agent-sdk', () => {
+      return {
+        query: async function* () {
+          yield {
+            type: 'stream_event',
+            event: {
+              type: 'message_start',
+              message: {
+                id: 'msg-tool-calls',
+                model: 'mock-model',
+              },
+            },
+          };
+
+          yield {
+            type: 'stream_event',
+            event: {
+              type: 'content_block_start',
+              index: 0,
+              content_block: {
+                type: 'text',
+              },
+            },
+          };
+
+          yield {
+            type: 'stream_event',
+            event: {
+              type: 'content_block_delta',
+              index: 0,
+              delta: {
+                type: 'text_delta',
+                text: '{"type":"tool-calls","calls":[{"toolName":"lookup_weather","input":{"city":"seoul"}}]}',
+              },
+            },
+          };
+
+          yield {
+            type: 'stream_event',
+            event: {
+              type: 'content_block_stop',
+              index: 0,
+            },
+          };
+
+          yield {
+            type: 'stream_event',
+            event: {
+              type: 'message_delta',
+              delta: {
+                stop_reason: 'end_turn',
+              },
+              usage: {
+                input_tokens: 10,
+                output_tokens: 5,
+                cache_read_input_tokens: 0,
+                cache_creation_input_tokens: 0,
+              },
+            },
+          };
+
+          yield {
+            type: 'result',
+            subtype: 'success',
+            stop_reason: 'end_turn',
+            result: 'done',
+            usage: buildMockResultUsage(),
+          };
+        },
+      };
+    });
+
+    const moduleId = `../index.ts?stream-contract-tool-calls-${Date.now()}-${Math.random()}`;
+    const { anthropic } = await import(moduleId);
+
+    const streamResult = await anthropic('claude-3-5-haiku-latest').doStream({
+      prompt: [
+        {
+          role: 'user',
+          content: [{ type: 'text', text: 'call tool' }],
+        },
+      ],
+      tools: [
+        {
+          type: 'function',
+          name: 'lookup_weather',
+          description: 'Lookup weather',
+          inputSchema: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['city'],
+            properties: {
+              city: {
+                type: 'string',
+              },
+            },
+          },
+        },
+      ],
+      toolChoice: { type: 'required' },
+    });
+
+    const parts: unknown[] = [];
+    for await (const part of streamResult.stream) {
+      parts.push(part);
+    }
+
+    const toolCallPart = parts.find(part => {
+      return (
+        typeof part === 'object' &&
+        part !== null &&
+        'type' in part &&
+        part.type === 'tool-call'
+      );
+    });
+
+    expect(toolCallPart).toBeDefined();
+
+    if (
+      typeof toolCallPart !== 'object' ||
+      toolCallPart === null ||
+      !('toolName' in toolCallPart) ||
+      !('input' in toolCallPart)
+    ) {
+      return;
+    }
+
+    expect(toolCallPart.toolName).toBe('lookup_weather');
+    expect(toolCallPart.input).toBe('{"city":"seoul"}');
+
+    const finishPart = parts.find(part => {
+      return (
+        typeof part === 'object' &&
+        part !== null &&
+        'type' in part &&
+        part.type === 'finish'
+      );
+    });
+
+    expect(finishPart).toBeDefined();
+
+    if (
+      typeof finishPart !== 'object' ||
+      finishPart === null ||
+      !('finishReason' in finishPart)
+    ) {
+      return;
+    }
+
+    const finishReason = finishPart.finishReason;
+    if (
+      typeof finishReason !== 'object' ||
+      finishReason === null ||
+      !('unified' in finishReason)
+    ) {
+      return;
+    }
+
+    expect(finishReason.unified).toBe('tool-calls');
+  });
+
+  test('tool mode emits tool-call from native MCP tool_use stream block', async () => {
+    mock.module('@anthropic-ai/claude-agent-sdk', () => {
+      return {
+        query: async function* () {
+          yield {
+            type: 'stream_event',
+            event: {
+              type: 'message_start',
+              message: {
+                id: 'msg-tool-native-mcp',
+                model: 'mock-model',
+              },
+            },
+          };
+
+          yield {
+            type: 'stream_event',
+            event: {
+              type: 'content_block_start',
+              index: 0,
+              content_block: {
+                type: 'tool_use',
+                id: 'toolu_stream_1',
+                name: 'mcp__ai_sdk_tool_bridge__bash',
+              },
+            },
+          };
+
+          yield {
+            type: 'stream_event',
+            event: {
+              type: 'content_block_delta',
+              index: 0,
+              delta: {
+                type: 'input_json_delta',
+                partial_json:
+                  '{"command":"bun -e \\\"console.log(Math.random())\\\"","description":"Run Math.random once"}',
+              },
+            },
+          };
+
+          yield {
+            type: 'stream_event',
+            event: {
+              type: 'content_block_stop',
+              index: 0,
+            },
+          };
+
+          yield {
+            type: 'stream_event',
+            event: {
+              type: 'message_delta',
+              delta: {
+                stop_reason: 'tool_use',
+              },
+              usage: {
+                input_tokens: 10,
+                output_tokens: 5,
+                cache_read_input_tokens: 0,
+                cache_creation_input_tokens: 0,
+              },
+            },
+          };
+
+          yield {
+            type: 'result',
+            subtype: 'error_max_turns',
+            stop_reason: null,
+            duration_ms: 1,
+            duration_api_ms: 1,
+            is_error: true,
+            num_turns: 1,
+            total_cost_usd: 0,
+            usage: buildMockResultUsage(),
+            modelUsage: {},
+            permission_denials: [],
+            errors: [],
+            uuid: 'uuid-stream-native-tool',
+            session_id: 'session-stream-native-tool',
+          };
+        },
+      };
+    });
+
+    const moduleId = `../index.ts?stream-contract-tool-native-mcp-${Date.now()}-${Math.random()}`;
+    const { anthropic } = await import(moduleId);
+
+    const streamResult = await anthropic('claude-3-5-haiku-latest').doStream({
+      prompt: [
+        {
+          role: 'user',
+          content: [{ type: 'text', text: 'call bash' }],
+        },
+      ],
+      tools: [
+        {
+          type: 'function',
+          name: 'bash',
+          description: 'Run shell command',
+          inputSchema: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['command', 'description'],
+            properties: {
+              command: {
+                type: 'string',
+              },
+              description: {
+                type: 'string',
+              },
+            },
+          },
+        },
+      ],
+      toolChoice: { type: 'required' },
+    });
+
+    const parts: unknown[] = [];
+    for await (const part of streamResult.stream) {
+      parts.push(part);
+    }
+
+    const toolCallPart = parts.find(part => {
+      return (
+        typeof part === 'object' &&
+        part !== null &&
+        'type' in part &&
+        part.type === 'tool-call'
+      );
+    });
+
+    expect(toolCallPart).toBeDefined();
+
+    if (
+      typeof toolCallPart !== 'object' ||
+      toolCallPart === null ||
+      !('toolCallId' in toolCallPart) ||
+      !('toolName' in toolCallPart) ||
+      !('input' in toolCallPart)
+    ) {
+      return;
+    }
+
+    expect(toolCallPart.toolCallId).toBe('toolu_stream_1');
+    expect(toolCallPart.toolName).toBe('bash');
+    expect(String(toolCallPart.input)).toContain('Math.random');
+
+    const toolInputEndPart = parts.find(part => {
+      return (
+        typeof part === 'object' &&
+        part !== null &&
+        'type' in part &&
+        part.type === 'tool-input-end'
+      );
+    });
+
+    expect(toolInputEndPart).toBeDefined();
+
+    const errorPart = parts.find(part => {
+      return (
+        typeof part === 'object' &&
+        part !== null &&
+        'type' in part &&
+        part.type === 'error'
+      );
+    });
+
+    expect(errorPart).toBeUndefined();
+
+    const finishPart = parts.find(part => {
+      return (
+        typeof part === 'object' &&
+        part !== null &&
+        'type' in part &&
+        part.type === 'finish'
+      );
+    });
+
+    expect(finishPart).toBeDefined();
+
+    if (
+      typeof finishPart !== 'object' ||
+      finishPart === null ||
+      !('finishReason' in finishPart)
+    ) {
+      return;
+    }
+
+    const finishReason = finishPart.finishReason;
+    if (
+      typeof finishReason !== 'object' ||
+      finishReason === null ||
+      !('unified' in finishReason) ||
+      !('raw' in finishReason)
+    ) {
+      return;
+    }
+
+    expect(finishReason.unified).toBe('tool-calls');
+    expect(finishReason.raw).toBe('tool_use');
+  });
+
+  test('tool mode emits tool-call when stream ends at tool_use without result message', async () => {
+    mock.module('@anthropic-ai/claude-agent-sdk', () => {
+      return {
+        query: async function* () {
+          yield {
+            type: 'stream_event',
+            event: {
+              type: 'message_start',
+              message: {
+                id: 'msg-tool-no-result',
+                model: 'mock-model',
+              },
+            },
+          };
+
+          yield {
+            type: 'stream_event',
+            event: {
+              type: 'content_block_start',
+              index: 0,
+              content_block: {
+                type: 'tool_use',
+                id: 'toolu_no_result_stream_1',
+                name: 'mcp__ai_sdk_tool_bridge__bash',
+              },
+            },
+          };
+
+          yield {
+            type: 'stream_event',
+            event: {
+              type: 'content_block_delta',
+              index: 0,
+              delta: {
+                type: 'input_json_delta',
+                partial_json:
+                  '{"command":"bun -e \\\"console.log(Math.random())\\\"","description":"Run Math.random once"}',
+              },
+            },
+          };
+
+          yield {
+            type: 'stream_event',
+            event: {
+              type: 'content_block_stop',
+              index: 0,
+            },
+          };
+
+          yield {
+            type: 'stream_event',
+            event: {
+              type: 'message_delta',
+              delta: {
+                stop_reason: 'tool_use',
+              },
+              usage: {
+                input_tokens: 10,
+                output_tokens: 5,
+                cache_read_input_tokens: 0,
+                cache_creation_input_tokens: 0,
+              },
+            },
+          };
+        },
+      };
+    });
+
+    const moduleId = `../index.ts?stream-contract-tool-no-result-${Date.now()}-${Math.random()}`;
+    const { anthropic } = await import(moduleId);
+
+    const streamResult = await anthropic('claude-3-5-haiku-latest').doStream({
+      prompt: [
+        {
+          role: 'user',
+          content: [{ type: 'text', text: 'call bash' }],
+        },
+      ],
+      tools: [
+        {
+          type: 'function',
+          name: 'bash',
+          description: 'Run shell command',
+          inputSchema: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['command', 'description'],
+            properties: {
+              command: {
+                type: 'string',
+              },
+              description: {
+                type: 'string',
+              },
+            },
+          },
+        },
+      ],
+      toolChoice: { type: 'required' },
+    });
+
+    const parts: unknown[] = [];
+    for await (const part of streamResult.stream) {
+      parts.push(part);
+    }
+
+    const toolCallPart = parts.find(part => {
+      return (
+        typeof part === 'object' &&
+        part !== null &&
+        'type' in part &&
+        part.type === 'tool-call'
+      );
+    });
+
+    expect(toolCallPart).toBeDefined();
+
+    if (
+      typeof toolCallPart !== 'object' ||
+      toolCallPart === null ||
+      !('toolCallId' in toolCallPart) ||
+      !('toolName' in toolCallPart) ||
+      !('input' in toolCallPart)
+    ) {
+      return;
+    }
+
+    expect(toolCallPart.toolCallId).toBe('toolu_no_result_stream_1');
+    expect(toolCallPart.toolName).toBe('bash');
+    expect(String(toolCallPart.input)).toContain('Math.random');
+
+    const finishPart = parts.find(part => {
+      return (
+        typeof part === 'object' &&
+        part !== null &&
+        'type' in part &&
+        part.type === 'finish'
+      );
+    });
+
+    expect(finishPart).toBeDefined();
+
+    if (
+      typeof finishPart !== 'object' ||
+      finishPart === null ||
+      !('finishReason' in finishPart)
+    ) {
+      return;
+    }
+
+    const finishReason = finishPart.finishReason;
+    if (
+      typeof finishReason !== 'object' ||
+      finishReason === null ||
+      !('unified' in finishReason) ||
+      !('raw' in finishReason)
+    ) {
+      return;
+    }
+
+    expect(finishReason.unified).toBe('tool-calls');
+    expect(finishReason.raw).toBe('tool_use');
+  });
+
+  test('tool mode emits tool-call from legacy single-call JSON text', async () => {
+    mock.module('@anthropic-ai/claude-agent-sdk', () => {
+      return {
+        query: async function* () {
+          yield {
+            type: 'stream_event',
+            event: {
+              type: 'message_start',
+              message: {
+                id: 'msg-tool-legacy-call',
+                model: 'mock-model',
+              },
+            },
+          };
+
+          yield {
+            type: 'stream_event',
+            event: {
+              type: 'content_block_start',
+              index: 0,
+              content_block: {
+                type: 'text',
+              },
+            },
+          };
+
+          yield {
+            type: 'stream_event',
+            event: {
+              type: 'content_block_delta',
+              index: 0,
+              delta: {
+                type: 'text_delta',
+                text: '{"tool":"bash","parameters":{"command":"bun -e \\\"console.log(Math.random())\\\"","description":"Run Math.random once"}}',
+              },
+            },
+          };
+
+          yield {
+            type: 'stream_event',
+            event: {
+              type: 'content_block_stop',
+              index: 0,
+            },
+          };
+
+          yield {
+            type: 'stream_event',
+            event: {
+              type: 'message_delta',
+              delta: {
+                stop_reason: 'end_turn',
+              },
+              usage: {
+                input_tokens: 10,
+                output_tokens: 5,
+                cache_read_input_tokens: 0,
+                cache_creation_input_tokens: 0,
+              },
+            },
+          };
+
+          yield {
+            type: 'result',
+            subtype: 'success',
+            stop_reason: 'end_turn',
+            result: 'done',
+            usage: buildMockResultUsage(),
+          };
+        },
+      };
+    });
+
+    const moduleId = `../index.ts?stream-contract-tool-legacy-call-${Date.now()}-${Math.random()}`;
+    const { anthropic } = await import(moduleId);
+
+    const streamResult = await anthropic('claude-3-5-haiku-latest').doStream({
+      prompt: [
+        {
+          role: 'user',
+          content: [{ type: 'text', text: 'call bash' }],
+        },
+      ],
+      tools: [
+        {
+          type: 'function',
+          name: 'bash',
+          description: 'Run shell command',
+          inputSchema: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['command', 'description'],
+            properties: {
+              command: {
+                type: 'string',
+              },
+              description: {
+                type: 'string',
+              },
+            },
+          },
+        },
+      ],
+      toolChoice: { type: 'required' },
+    });
+
+    const parts: unknown[] = [];
+    for await (const part of streamResult.stream) {
+      parts.push(part);
+    }
+
+    const toolCallPart = parts.find(part => {
+      return (
+        typeof part === 'object' &&
+        part !== null &&
+        'type' in part &&
+        part.type === 'tool-call'
+      );
+    });
+
+    expect(toolCallPart).toBeDefined();
+
+    if (
+      typeof toolCallPart !== 'object' ||
+      toolCallPart === null ||
+      !('toolName' in toolCallPart) ||
+      !('input' in toolCallPart)
+    ) {
+      return;
+    }
+
+    expect(toolCallPart.toolName).toBe('bash');
+    expect(String(toolCallPart.input)).toContain('Math.random');
+  });
+
+  test('tool mode emits explicit error when model returns empty successful output', async () => {
+    mock.module('@anthropic-ai/claude-agent-sdk', () => {
+      return {
+        query: async function* () {
+          yield {
+            type: 'stream_event',
+            event: {
+              type: 'message_start',
+              message: {
+                id: 'msg-tool-empty',
+                model: 'mock-model',
+              },
+            },
+          };
+
+          yield {
+            type: 'stream_event',
+            event: {
+              type: 'message_delta',
+              delta: {
+                stop_reason: 'end_turn',
+              },
+              usage: {
+                input_tokens: 10,
+                output_tokens: 5,
+                cache_read_input_tokens: 0,
+                cache_creation_input_tokens: 0,
+              },
+            },
+          };
+
+          yield {
+            type: 'result',
+            subtype: 'success',
+            stop_reason: 'end_turn',
+            result: '',
+            usage: buildMockResultUsage(),
+          };
+        },
+      };
+    });
+
+    const moduleId = `../index.ts?stream-contract-tool-empty-${Date.now()}-${Math.random()}`;
+    const { anthropic } = await import(moduleId);
+
+    const streamResult = await anthropic('claude-3-5-haiku-latest').doStream({
+      prompt: [
+        {
+          role: 'user',
+          content: [{ type: 'text', text: 'call tool' }],
+        },
+      ],
+      tools: [
+        {
+          type: 'function',
+          name: 'lookup_weather',
+          description: 'Lookup weather',
+          inputSchema: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['city'],
+            properties: {
+              city: {
+                type: 'string',
+              },
+            },
+          },
+        },
+      ],
+      toolChoice: { type: 'required' },
+    });
+
+    const parts: unknown[] = [];
+    for await (const part of streamResult.stream) {
+      parts.push(part);
+    }
+
+    const errorPart = parts.find(part => {
+      return (
+        typeof part === 'object' &&
+        part !== null &&
+        'type' in part &&
+        part.type === 'error'
+      );
+    });
+
+    expect(errorPart).toBeDefined();
+
+    if (
+      typeof errorPart !== 'object' ||
+      errorPart === null ||
+      !('error' in errorPart)
+    ) {
+      return;
+    }
+
+    expect(String(errorPart.error)).toContain('Tool routing produced no tool call');
+
+    const finishPart = parts.find(part => {
+      return (
+        typeof part === 'object' &&
+        part !== null &&
+        'type' in part &&
+        part.type === 'finish'
+      );
+    });
+
+    expect(finishPart).toBeDefined();
+
+    if (
+      typeof finishPart !== 'object' ||
+      finishPart === null ||
+      !('finishReason' in finishPart)
+    ) {
+      return;
+    }
+
+    const finishReason = finishPart.finishReason;
+    if (
+      typeof finishReason !== 'object' ||
+      finishReason === null ||
+      !('unified' in finishReason) ||
+      !('raw' in finishReason)
+    ) {
+      return;
+    }
+
+    expect(finishReason.unified).toBe('error');
+    expect(finishReason.raw).toBe('empty-tool-routing-output');
+  });
+
+  test('tool mode recovers from structured output retry exhaustion when text is recoverable', async () => {
+    mock.module('@anthropic-ai/claude-agent-sdk', () => {
+      return {
+        query: async function* () {
+          yield {
+            type: 'stream_event',
+            event: {
+              type: 'message_start',
+              message: {
+                id: 'msg-retry-recovered',
+                model: 'mock-model',
+              },
+            },
+          };
+
+          yield {
+            type: 'stream_event',
+            event: {
+              type: 'content_block_start',
+              index: 0,
+              content_block: {
+                type: 'text',
+              },
+            },
+          };
+
+          yield {
+            type: 'stream_event',
+            event: {
+              type: 'content_block_delta',
+              index: 0,
+              delta: {
+                type: 'text_delta',
+                text: '{"type":"text","text":"안녕하세요"}',
+              },
+            },
+          };
+
+          yield {
+            type: 'stream_event',
+            event: {
+              type: 'content_block_stop',
+              index: 0,
+            },
+          };
+
+          yield {
+            type: 'stream_event',
+            event: {
+              type: 'message_delta',
+              delta: {
+                stop_reason: 'end_turn',
+              },
+              usage: {
+                input_tokens: 10,
+                output_tokens: 5,
+                cache_read_input_tokens: 0,
+                cache_creation_input_tokens: 0,
+              },
+            },
+          };
+
+          yield {
+            type: 'result',
+            subtype: 'error_max_structured_output_retries',
+            stop_reason: 'end_turn',
+            duration_ms: 1,
+            duration_api_ms: 1,
+            is_error: true,
+            num_turns: 1,
+            total_cost_usd: 0,
+            usage: buildMockResultUsage(),
+            modelUsage: {},
+            permission_denials: [],
+            errors: [
+              '[{"expected":"string","code":"invalid_type","path":["reason"]}]',
+            ],
+            uuid: 'uuid-1',
+            session_id: 'session-1',
+          };
+        },
+      };
+    });
+
+    const moduleId = `../index.ts?stream-contract-retry-recovered-${Date.now()}-${Math.random()}`;
+    const { anthropic } = await import(moduleId);
+
+    const streamResult = await anthropic('claude-3-5-haiku-latest').doStream({
+      prompt: [
+        {
+          role: 'user',
+          content: [{ type: 'text', text: 'hello' }],
+        },
+      ],
+      tools: [
+        {
+          type: 'function',
+          name: 'lookup_weather',
+          description: 'Lookup weather',
+          inputSchema: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['city'],
+            properties: {
+              city: {
+                type: 'string',
+              },
+            },
+          },
+        },
+      ],
+      toolChoice: { type: 'required' },
+    });
+
+    const parts: unknown[] = [];
+    for await (const part of streamResult.stream) {
+      parts.push(part);
+    }
+
+    const errorPart = parts.find(part => {
+      return (
+        typeof part === 'object' &&
+        part !== null &&
+        'type' in part &&
+        part.type === 'error'
+      );
+    });
+
+    expect(errorPart).toBeUndefined();
+
+    const textDelta = parts.find(part => {
+      return (
+        typeof part === 'object' &&
+        part !== null &&
+        'type' in part &&
+        part.type === 'text-delta'
+      );
+    });
+
+    expect(textDelta).toBeDefined();
+
+    if (
+      typeof textDelta !== 'object' ||
+      textDelta === null ||
+      !('delta' in textDelta)
+    ) {
+      return;
+    }
+
+    expect(textDelta.delta).toBe('안녕하세요');
+
+    const finishPart = parts.find(part => {
+      return (
+        typeof part === 'object' &&
+        part !== null &&
+        'type' in part &&
+        part.type === 'finish'
+      );
+    });
+
+    expect(finishPart).toBeDefined();
+
+    if (
+      typeof finishPart !== 'object' ||
+      finishPart === null ||
+      !('finishReason' in finishPart)
+    ) {
+      return;
+    }
+
+    const finishReason = finishPart.finishReason;
+    if (
+      typeof finishReason !== 'object' ||
+      finishReason === null ||
+      !('unified' in finishReason)
+    ) {
+      return;
+    }
+
+    expect(finishReason.unified).toBe('stop');
   });
 });
