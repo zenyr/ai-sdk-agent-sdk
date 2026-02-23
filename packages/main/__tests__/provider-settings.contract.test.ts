@@ -922,10 +922,100 @@ describe("provider settings contract", () => {
     }
 
     expect(secondPrompt.includes("첫 질문")).toBeFalse();
+    expect(secondPrompt.includes("첫 답변")).toBeFalse();
     expect(secondPrompt.includes("두 번째 질문")).toBeTrue();
 
     const resumedSessionId = readResumeFromQueryCall(queryCalls, 1);
     expect(resumedSessionId).toBe("session-1");
+  });
+
+  test("reuses session while preserving assistant tool-call context", async () => {
+    const queryCalls: unknown[] = [];
+    let callCount = 0;
+
+    const { createAnthropic } = await importIndexWithMockedQuery({
+      queryCalls,
+      resultFactory: () => {
+        callCount += 1;
+
+        return {
+          type: "result",
+          subtype: "success",
+          stop_reason: "end_turn",
+          result: "ok",
+          usage: buildMockResultUsage(),
+          session_id: `session-tool-${callCount}`,
+        };
+      },
+    });
+
+    const model = createAnthropic({})("claude-3-5-haiku-latest");
+
+    await model.doGenerate({
+      prompt: [
+        {
+          role: "user",
+          content: [{ type: "text", text: "run bash" }],
+        },
+      ],
+    });
+
+    await model.doGenerate({
+      prompt: [
+        {
+          role: "user",
+          content: [{ type: "text", text: "run bash" }],
+        },
+        {
+          role: "assistant",
+          content: [
+            {
+              type: "tool-call",
+              toolCallId: "call_1",
+              toolName: "bash",
+              input: {
+                command: 'bun -e "console.log(1)"',
+              },
+            },
+          ],
+        },
+        {
+          role: "tool",
+          content: [
+            {
+              type: "tool-result",
+              toolCallId: "call_1",
+              toolName: "bash",
+              output: {
+                type: "text",
+                value: "1\n",
+              },
+            },
+          ],
+        },
+        {
+          role: "user",
+          content: [{ type: "text", text: "summarize result" }],
+        },
+      ],
+    });
+
+    expect(queryCalls.length).toBe(2);
+
+    const secondPrompt = readPromptFromQueryCall(queryCalls, 1);
+    expect(secondPrompt).toBeDefined();
+
+    if (secondPrompt === undefined) {
+      return;
+    }
+
+    expect(secondPrompt.includes("run bash")).toBeFalse();
+    expect(secondPrompt.includes("[tool-call:bash#call_1]")).toBeTrue();
+    expect(secondPrompt.includes("[tool-result:bash#call_1]")).toBeTrue();
+    expect(secondPrompt.includes("summarize result")).toBeTrue();
+
+    const resumedSessionId = readResumeFromQueryCall(queryCalls, 1);
+    expect(resumedSessionId).toBe("session-tool-1");
   });
 
   test("does not reuse claude session when prompt diverges", async () => {

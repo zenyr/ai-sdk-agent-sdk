@@ -71,6 +71,46 @@ export const serializePromptMessagesWithoutSystem = (
     .map(serializeMessage);
 };
 
+const serializeMessageForResumeQuery = (message: LanguageModelV3Message): string | undefined => {
+  if (message.role === "system") {
+    return undefined;
+  }
+
+  if (message.role !== "assistant") {
+    return serializeMessage(message);
+  }
+
+  const serializedToolCalls = message.content
+    .filter((part) => {
+      if (!isRecord(part)) {
+        return false;
+      }
+
+      return readString(part, "type") === "tool-call";
+    })
+    .map(contentPartToText)
+    .filter((part) => {
+      return part.length > 0;
+    })
+    .join("\n");
+
+  if (serializedToolCalls.length === 0) {
+    return undefined;
+  }
+
+  return `[assistant]\n${serializedToolCalls}`;
+};
+
+export const serializePromptMessagesForResumeQuery = (
+  prompt: LanguageModelV3Message[],
+): string[] => {
+  return prompt
+    .map(serializeMessageForResumeQuery)
+    .filter((serializedMessage): serializedMessage is string => {
+      return typeof serializedMessage === "string" && serializedMessage.length > 0;
+    });
+};
+
 export const extractSystemPromptFromMessages = (
   prompt: LanguageModelV3Message[],
 ): string | undefined => {

@@ -34,6 +34,7 @@ import {
   extractSystemPromptFromMessages,
   joinSerializedPromptMessages,
   serializePromptMessages,
+  serializePromptMessagesForResumeQuery,
   serializePromptMessagesWithoutSystem,
 } from "../bridge/prompt-serializer";
 import { buildProviderMetadata, mapFinishReason, mapUsage } from "../bridge/result-mapping";
@@ -277,12 +278,23 @@ const buildPromptQueryInput = (args: {
 
   const appendedSourceMessages = args.promptMessages.slice(previousPromptMessages.length);
   const appendedPromptMessagesForQuery =
-    serializePromptMessagesWithoutSystem(appendedSourceMessages);
+    serializePromptMessagesForResumeQuery(appendedSourceMessages);
 
   if (appendedPromptMessagesForQuery.length === 0) {
+    const fallbackAppendedPromptMessages =
+      serializePromptMessagesWithoutSystem(appendedSourceMessages);
+
+    if (fallbackAppendedPromptMessages.length === 0) {
+      return {
+        prompt: fullPrompt,
+        serializedPromptMessages,
+      };
+    }
+
     return {
-      prompt: fullPrompt,
+      prompt: joinSerializedPromptMessages(fallbackAppendedPromptMessages),
       serializedPromptMessages,
+      resumeSessionId: previousSessionState.sessionId,
     };
   }
 
