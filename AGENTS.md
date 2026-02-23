@@ -1,29 +1,48 @@
+## Core policy
 
-Default to using Bun instead of Node.js.
+- No data loss. Keep full intent and technical details.
+- Concision over English grammar. Short, clear, direct.
+- Internal writing can be fragments if meaning is exact.
 
-- Use `bun <file>` instead of `node <file>` or `ts-node <file>`
-- Use `bun test` instead of `jest` or `vitest`
-- Use `bun build <file.html|file.ts|file.css>` instead of `webpack` or `esbuild`
-- Use `bun install` instead of `npm install` or `yarn install` or `pnpm install`
-- Use `bun run <script>` instead of `npm run <script>` or `yarn run <script>` or `pnpm run <script>`
-- Use `bunx <package> <command>` instead of `npx <package> <command>`
-- Bun automatically loads .env, so don't use dotenv.
+## Language policy
 
-## APIs
+- Code comments, docs, commit/PR text: plain layman's English.
+- User-facing conversation: always same language as user.
 
-- `Bun.serve()` supports WebSockets, HTTPS, and routes. Don't use `express`.
-- `bun:sqlite` for SQLite. Don't use `better-sqlite3`.
-- `Bun.redis` for Redis. Don't use `ioredis`.
-- `Bun.sql` for Postgres. Don't use `pg` or `postgres.js`.
-- `WebSocket` is built-in. Don't use `ws`.
-- Prefer `Bun.file` over `node:fs`'s readFile/writeFile
-- Bun.$`ls` instead of execa.
+## TypeScript coding style
+
+- Prefer `const` function expressions over function statements.
+- No `as` casting.
+- No non-null assertion (`!`).
+- Use type guard utility functions aggressively.
+- Handle nullable/unknown values with explicit checks.
+
+## Runtime and package manager
+
+- Default to Bun, not Node.js.
+- Use `bun <file>` instead of `node <file>` or `ts-node <file>`.
+- Use `bun test` instead of `jest` or `vitest`.
+- Use `bun build <file.html|file.ts|file.css>` instead of `webpack` or `esbuild`.
+- Use `bun install` instead of `npm/yarn/pnpm install`.
+- Use `bun run <script>` instead of `npm/yarn/pnpm run <script>`.
+- Use `bunx <package> <command>` instead of `npx <package> <command>`.
+- Bun auto-loads `.env`; do not add dotenv.
+
+## APIs and libraries
+
+- Use `Bun.serve()` for HTTP/WebSocket/routes. Do not use `express`.
+- Use `bun:sqlite` for SQLite. Do not use `better-sqlite3`.
+- Use `Bun.redis` for Redis. Do not use `ioredis`.
+- Use `Bun.sql` for Postgres. Do not use `pg` or `postgres.js`.
+- Use built-in `WebSocket`. Do not use `ws`.
+- Prefer `Bun.file` over `node:fs` read/write helpers.
+- Prefer `Bun.$` shell API over execa.
 
 ## Testing
 
-Use `bun test` to run tests.
+- Run tests with `bun test`.
 
-```ts#index.test.ts
+```ts
 import { test, expect } from "bun:test";
 
 test("hello world", () => {
@@ -33,44 +52,33 @@ test("hello world", () => {
 
 ## Frontend
 
-Use HTML imports with `Bun.serve()`. Don't use `vite`. HTML imports fully support React, CSS, Tailwind.
+- Use HTML imports with `Bun.serve()`. Do not use `vite`.
+- HTML can import `.tsx/.jsx/.js` directly; Bun bundles automatically.
+- CSS via `<link>` is bundled by Bun CSS bundler.
 
-Server:
-
-```ts#index.ts
-import index from "./index.html"
+```ts
+import index from "./index.html";
 
 Bun.serve({
   routes: {
     "/": index,
     "/api/users/:id": {
-      GET: (req) => {
-        return new Response(JSON.stringify({ id: req.params.id }));
-      },
+      GET: (req) => new Response(JSON.stringify({ id: req.params.id })),
     },
   },
-  // optional websocket support
   websocket: {
-    open: (ws) => {
-      ws.send("Hello, world!");
-    },
-    message: (ws, message) => {
-      ws.send(message);
-    },
-    close: (ws) => {
-      // handle close
-    }
+    open: (ws) => ws.send("Hello, world!"),
+    message: (ws, message) => ws.send(message),
+    close: () => {},
   },
   development: {
     hmr: true,
     console: true,
-  }
-})
+  },
+});
 ```
 
-HTML files can import .tsx, .jsx or .js files directly and Bun's bundler will transpile & bundle automatically. `<link>` tags can point to stylesheets and Bun's CSS bundler will bundle.
-
-```html#index.html
+```html
 <html>
   <body>
     <h1>Hello, world!</h1>
@@ -79,28 +87,16 @@ HTML files can import .tsx, .jsx or .js files directly and Bun's bundler will tr
 </html>
 ```
 
-With the following `frontend.tsx`:
-
-```tsx#frontend.tsx
+```tsx
 import React from "react";
 import { createRoot } from "react-dom/client";
+import "./index.css";
 
-// import .css files directly and it works
-import './index.css';
+const Frontend = () => <h1>Hello, world!</h1>;
 
 const root = createRoot(document.body);
-
-export default function Frontend() {
-  return <h1>Hello, world!</h1>;
-}
-
 root.render(<Frontend />);
 ```
 
-Then, run index.ts
-
-```sh
-bun --hot ./index.ts
-```
-
-For more information, read the Bun API docs in `node_modules/bun-types/docs/**.mdx`.
+- Run dev server with `bun --hot ./index.ts`.
+- For more Bun API details, read `node_modules/bun-types/docs/**.mdx`.

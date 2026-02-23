@@ -1,8 +1,34 @@
 {
   "name": "ai-sdk-agent-sdk",
-  "module": "index.ts",
+  "version": "0.0.1-rc1",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "bun": "./index.ts",
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./bun": {
+      "types": "./dist/index.d.ts",
+      "bun": "./bun.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "index.ts",
+    "bun.ts",
+    "internal/anthropic-option-warnings.ts"
+  ],
+  "scripts": {
+    "build": "rm -rf ./dist && bun build ./index.ts --target=node --format=esm --outdir ./dist --external @ai-sdk/anthropic --external @ai-sdk/provider --external @ai-sdk/provider-utils --external @anthropic-ai/claude-agent-sdk",
+    "prepublishOnly": "bun run build"
+  },
   "type": "module",
-  "private": true,
+  "private": false,
   "dependencies": {
     "@ai-sdk/anthropic": "latest",
     "@ai-sdk/provider": "latest",
