@@ -33,6 +33,7 @@ import {
 import {
   extractSystemPromptFromMessages,
   joinSerializedPromptMessages,
+  serializeMessage,
   serializePromptMessages,
   serializePromptMessagesForResumeQuery,
   serializePromptMessagesWithoutSystem,
@@ -51,7 +52,7 @@ import {
   type StreamEventState,
 } from "../shared/stream-types";
 import type { ToolExecutorMap } from "../shared/tool-executor";
-import { isRecord, readString, safeJsonStringify } from "../shared/type-readers";
+import { isRecord, readRecord, readString, safeJsonStringify } from "../shared/type-readers";
 
 const isAssistantMessage = (message: SDKMessage): message is SDKAssistantMessage => {
   return message.type === "assistant";
@@ -127,13 +128,41 @@ type PromptSessionState = {
   serializedPromptMessages: string[];
 };
 
+type IncomingSessionState = {
+  incomingSessionKey: string;
+  sessionId: string;
+  promptMessageCount: number;
+  firstPromptMessageSignature?: string;
+  lastPromptMessageSignature?: string;
+};
+
 type PromptQueryInput = {
   prompt: string;
-  serializedPromptMessages: string[];
+  serializedPromptMessages?: string[];
   resumeSessionId?: string;
 };
 
+type PromptQueryBuildResult = {
+  promptQueryInput: PromptQueryInput;
+  incomingSessionKey?: string;
+};
+
 const MAX_PROMPT_SESSION_STATES = 20;
+const MAX_INCOMING_SESSION_STATES = 200;
+const CONVERSATION_ID_HEADER = "x-conversation-id";
+const LEGACY_OPENCODE_SESSION_HEADER = "x-opencode-session";
+const CONVERSATION_ID_CANDIDATE_KEYS = ["conversationId", "conversationID", "conversation_id"];
+const LEGACY_INCOMING_SESSION_CANDIDATE_KEYS = [
+  "sessionId",
+  "sessionID",
+  "session_id",
+  "promptCacheKey",
+  "prompt_cache_key",
+  "opencodeSession",
+  "opencode_session",
+];
+const CANONICAL_PROVIDER_OPTIONS_NAMESPACES = ["agentSdk", "agent_sdk", "agent-sdk"];
+const LEGACY_PROVIDER_OPTIONS_NAMESPACES = ["opencode", "anthropic"];
 
 const toBridgeToolName = (toolName: string): string => {
   return `${TOOL_BRIDGE_NAME_PREFIX}${toolName}`;
@@ -302,6 +331,337 @@ const buildPromptQueryInput = (args: {
     prompt: joinSerializedPromptMessages(appendedPromptMessagesForQuery),
     serializedPromptMessages,
     resumeSessionId: previousSessionState.sessionId,
+  };
+};
+
+const buildPromptQueryInputWithoutResume = (
+  promptMessages: LanguageModelV3Message[],
+): PromptQueryInput => {
+  const serializedPromptMessagesForQuery = serializePromptMessagesWithoutSystem(promptMessages);
+
+  return {
+    prompt: joinSerializedPromptMessages(serializedPromptMessagesForQuery),
+  };
+};
+
+const buildResumePromptQueryInput = (args: {
+  promptMessages: LanguageModelV3Message[];
+  resumeSessionId: string;
+}): PromptQueryInput | undefined => {
+  const appendedPromptMessagesForQuery = serializePromptMessagesForResumeQuery(args.promptMessages);
+
+  if (appendedPromptMessagesForQuery.length > 0) {
+    return {
+      prompt: joinSerializedPromptMessages(appendedPromptMessagesForQuery),
+      resumeSessionId: args.resumeSessionId,
+    };
+  }
+
+  const fallbackPromptMessages = serializePromptMessagesWithoutSystem(args.promptMessages);
+  if (fallbackPromptMessages.length === 0) {
+    return undefined;
+  }
+
+  return {
+    prompt: joinSerializedPromptMessages(fallbackPromptMessages),
+    resumeSessionId: args.resumeSessionId,
+  };
+};
+
+const readPromptMessageSignature = (
+  message: LanguageModelV3Message | undefined,
+): string | undefined => {
+  if (message === undefined) {
+    return undefined;
+  }
+
+  const signature = serializeMessage(message);
+  if (signature.length === 0) {
+    return undefined;
+  }
+
+  return signature;
+};
+
+const readFirstNonEmptyString = (
+  source: Record<string, unknown> | undefined,
+  keys: string[],
+): string | undefined => {
+  if (source === undefined) {
+    return undefined;
+  }
+
+  for (const key of keys) {
+    const value = readNonEmptyString(source[key]);
+    if (value !== undefined) {
+      return value;
+    }
+  }
+
+  return undefined;
+};
+
+const readIncomingSessionKeyFromRecord = (
+  source: Record<string, unknown> | undefined,
+): string | undefined => {
+  if (source === undefined) {
+    return undefined;
+  }
+
+  return (
+    readFirstNonEmptyString(source, CONVERSATION_ID_CANDIDATE_KEYS) ??
+    readFirstNonEmptyString(source, LEGACY_INCOMING_SESSION_CANDIDATE_KEYS)
+  );
+};
+
+const readCaseInsensitiveHeader = (headers: unknown, headerName: string): string | undefined => {
+  if (!isRecord(headers)) {
+    return undefined;
+  }
+
+  const directHeaderValue = readNonEmptyString(headers[headerName]);
+  if (directHeaderValue !== undefined) {
+    return directHeaderValue;
+  }
+
+  const headerGetter = headers.get;
+  if (typeof headerGetter === "function") {
+    try {
+      const valueFromGetter = readNonEmptyString(headerGetter.call(headers, headerName));
+      if (valueFromGetter !== undefined) {
+        return valueFromGetter;
+      }
+    } catch {}
+  }
+
+  const normalizedHeaderName = headerName.toLowerCase();
+  for (const [rawHeaderName, rawHeaderValue] of Object.entries(headers)) {
+    if (rawHeaderName.toLowerCase() !== normalizedHeaderName) {
+      continue;
+    }
+
+    const normalizedHeaderValue = readNonEmptyString(rawHeaderValue);
+    if (normalizedHeaderValue !== undefined) {
+      return normalizedHeaderValue;
+    }
+  }
+
+  return undefined;
+};
+
+const readIncomingSessionKeyFromHeaders = (
+  optionsRecord: Record<string, unknown>,
+): string | undefined => {
+  return (
+    readCaseInsensitiveHeader(optionsRecord.headers, CONVERSATION_ID_HEADER) ??
+    readCaseInsensitiveHeader(optionsRecord.headers, LEGACY_OPENCODE_SESSION_HEADER)
+  );
+};
+
+const readIncomingSessionKeyFromTelemetry = (
+  optionsRecord: Record<string, unknown>,
+): string | undefined => {
+  const telemetry = readRecord(optionsRecord, "experimental_telemetry");
+  if (telemetry === undefined) {
+    return undefined;
+  }
+
+  const metadata = readRecord(telemetry, "metadata");
+  if (metadata === undefined) {
+    return undefined;
+  }
+
+  return readIncomingSessionKeyFromRecord(metadata);
+};
+
+const readIncomingSessionKeyFromProviderOptions = (
+  optionsRecord: Record<string, unknown>,
+): string | undefined => {
+  const providerOptions = readRecord(optionsRecord, "providerOptions");
+  if (providerOptions === undefined) {
+    return undefined;
+  }
+
+  for (const namespace of CANONICAL_PROVIDER_OPTIONS_NAMESPACES) {
+    const canonicalOptions = readRecord(providerOptions, namespace);
+    if (canonicalOptions === undefined) {
+      continue;
+    }
+
+    const canonicalConversationId = readIncomingSessionKeyFromRecord(canonicalOptions);
+    if (canonicalConversationId !== undefined) {
+      return canonicalConversationId;
+    }
+  }
+
+  for (const namespace of LEGACY_PROVIDER_OPTIONS_NAMESPACES) {
+    const legacyOptions = readRecord(providerOptions, namespace);
+    if (legacyOptions === undefined) {
+      continue;
+    }
+
+    const legacyConversationId = readIncomingSessionKeyFromRecord(legacyOptions);
+    if (legacyConversationId !== undefined) {
+      return legacyConversationId;
+    }
+  }
+
+  return readIncomingSessionKeyFromRecord(providerOptions);
+};
+
+const readIncomingSessionKey = (options: LanguageModelV3CallOptions): string | undefined => {
+  if (!isRecord(options)) {
+    return undefined;
+  }
+
+  return (
+    readIncomingSessionKeyFromHeaders(options) ??
+    readIncomingSessionKeyFromTelemetry(options) ??
+    readIncomingSessionKeyFromProviderOptions(options)
+  );
+};
+
+const findIncomingSessionState = (args: {
+  incomingSessionKey: string;
+  previousIncomingSessionStates: IncomingSessionState[];
+}): IncomingSessionState | undefined => {
+  return args.previousIncomingSessionStates.find((incomingSessionState) => {
+    return incomingSessionState.incomingSessionKey === args.incomingSessionKey;
+  });
+};
+
+const mergeIncomingSessionState = (args: {
+  previousIncomingSessionStates: IncomingSessionState[];
+  nextIncomingSessionState: IncomingSessionState;
+}): IncomingSessionState[] => {
+  const dedupedStates = args.previousIncomingSessionStates.filter((incomingSessionState) => {
+    return (
+      incomingSessionState.incomingSessionKey !== args.nextIncomingSessionState.incomingSessionKey
+    );
+  });
+
+  return [args.nextIncomingSessionState, ...dedupedStates].slice(0, MAX_INCOMING_SESSION_STATES);
+};
+
+const buildIncomingSessionState = (args: {
+  incomingSessionKey: string;
+  sessionId: string;
+  promptMessages: LanguageModelV3Message[];
+}): IncomingSessionState => {
+  const promptMessageCount = args.promptMessages.length;
+  const firstPromptMessageSignature = readPromptMessageSignature(args.promptMessages[0]);
+  const lastPromptMessageSignature = readPromptMessageSignature(
+    args.promptMessages[promptMessageCount - 1],
+  );
+
+  return {
+    incomingSessionKey: args.incomingSessionKey,
+    sessionId: args.sessionId,
+    promptMessageCount,
+    firstPromptMessageSignature,
+    lastPromptMessageSignature,
+  };
+};
+
+const isSingleUserPrompt = (promptMessages: LanguageModelV3Message[]): boolean => {
+  if (promptMessages.length !== 1) {
+    return false;
+  }
+
+  const firstPromptMessage = promptMessages[0];
+  return firstPromptMessage !== undefined && firstPromptMessage.role === "user";
+};
+
+const buildPromptQueryInputFromIncomingSession = (args: {
+  incomingSessionState: IncomingSessionState;
+  promptMessages: LanguageModelV3Message[];
+}): PromptQueryInput | undefined => {
+  const previousPromptMessageCount = args.incomingSessionState.promptMessageCount;
+  const { promptMessages } = args;
+
+  if (promptMessages.length > previousPromptMessageCount) {
+    if (previousPromptMessageCount > 0) {
+      const firstPromptMessageSignature = readPromptMessageSignature(promptMessages[0]);
+      if (
+        args.incomingSessionState.firstPromptMessageSignature !== undefined &&
+        firstPromptMessageSignature !== args.incomingSessionState.firstPromptMessageSignature
+      ) {
+        return undefined;
+      }
+
+      const previousLastPromptMessage = promptMessages[previousPromptMessageCount - 1];
+      const previousLastPromptMessageSignature =
+        readPromptMessageSignature(previousLastPromptMessage);
+      if (
+        args.incomingSessionState.lastPromptMessageSignature !== undefined &&
+        previousLastPromptMessageSignature !== args.incomingSessionState.lastPromptMessageSignature
+      ) {
+        return undefined;
+      }
+    }
+
+    return buildResumePromptQueryInput({
+      promptMessages: promptMessages.slice(previousPromptMessageCount),
+      resumeSessionId: args.incomingSessionState.sessionId,
+    });
+  }
+
+  if (!isSingleUserPrompt(promptMessages)) {
+    return undefined;
+  }
+
+  return buildResumePromptQueryInput({
+    promptMessages,
+    resumeSessionId: args.incomingSessionState.sessionId,
+  });
+};
+
+const buildPromptQueryInputWithIncomingSession = (args: {
+  options: LanguageModelV3CallOptions;
+  previousSessionStates: PromptSessionState[];
+  previousIncomingSessionStates: IncomingSessionState[];
+}): PromptQueryBuildResult => {
+  const incomingSessionKey = readIncomingSessionKey(args.options);
+
+  if (incomingSessionKey === undefined) {
+    return {
+      promptQueryInput: buildPromptQueryInput({
+        promptMessages: args.options.prompt,
+        previousSessionStates: args.previousSessionStates,
+      }),
+    };
+  }
+
+  const incomingSessionState = findIncomingSessionState({
+    incomingSessionKey,
+    previousIncomingSessionStates: args.previousIncomingSessionStates,
+  });
+
+  if (incomingSessionState === undefined) {
+    return {
+      incomingSessionKey,
+      promptQueryInput: buildPromptQueryInputWithoutResume(args.options.prompt),
+    };
+  }
+
+  const promptQueryInputFromIncomingSession = buildPromptQueryInputFromIncomingSession({
+    incomingSessionState,
+    promptMessages: args.options.prompt,
+  });
+
+  if (promptQueryInputFromIncomingSession !== undefined) {
+    return {
+      incomingSessionKey,
+      promptQueryInput: promptQueryInputFromIncomingSession,
+    };
+  }
+
+  return {
+    incomingSessionKey,
+    promptQueryInput: buildPromptQueryInput({
+      promptMessages: args.options.prompt,
+      previousSessionStates: args.previousSessionStates,
+    }),
   };
 };
 
@@ -607,6 +967,7 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
   private readonly maxTurns: number | undefined;
   private readonly providerSettingWarnings: SharedV3Warning[];
   private promptSessionStates: PromptSessionState[] = [];
+  private incomingSessionStates: IncomingSessionState[] = [];
 
   constructor(args: {
     modelId: string;
@@ -631,9 +992,10 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
     const anthropicOptions = parseAnthropicProviderOptions(options);
     const warnings = [...collectWarnings(options, completionMode), ...this.providerSettingWarnings];
 
-    const promptQueryInput = buildPromptQueryInput({
-      promptMessages: options.prompt,
+    const { promptQueryInput, incomingSessionKey } = buildPromptQueryInputWithIncomingSession({
+      options,
       previousSessionStates: this.promptSessionStates,
+      previousIncomingSessionStates: this.incomingSessionStates,
     });
     const basePrompt = promptQueryInput.prompt;
     const systemPrompt = extractSystemPromptFromMessages(options.prompt);
@@ -823,13 +1185,27 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
     });
 
     if (sessionId !== undefined) {
-      this.promptSessionStates = mergePromptSessionState({
-        previousSessionStates: this.promptSessionStates,
-        nextSessionState: {
-          sessionId,
-          serializedPromptMessages: promptQueryInput.serializedPromptMessages,
-        },
-      });
+      const serializedPromptMessages = promptQueryInput.serializedPromptMessages;
+      if (serializedPromptMessages !== undefined) {
+        this.promptSessionStates = mergePromptSessionState({
+          previousSessionStates: this.promptSessionStates,
+          nextSessionState: {
+            sessionId,
+            serializedPromptMessages,
+          },
+        });
+      }
+
+      if (incomingSessionKey !== undefined) {
+        this.incomingSessionStates = mergeIncomingSessionState({
+          previousIncomingSessionStates: this.incomingSessionStates,
+          nextIncomingSessionState: buildIncomingSessionState({
+            incomingSessionKey,
+            sessionId,
+            promptMessages: options.prompt,
+          }),
+        });
+      }
     }
 
     if (finalResultMessage === undefined) {
@@ -1143,9 +1519,10 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
     const anthropicOptions = parseAnthropicProviderOptions(options);
     const warnings = [...collectWarnings(options, completionMode), ...this.providerSettingWarnings];
 
-    const promptQueryInput = buildPromptQueryInput({
-      promptMessages: options.prompt,
+    const { promptQueryInput, incomingSessionKey } = buildPromptQueryInputWithIncomingSession({
+      options,
       previousSessionStates: this.promptSessionStates,
+      previousIncomingSessionStates: this.incomingSessionStates,
     });
     const basePrompt = promptQueryInput.prompt;
     const systemPrompt = extractSystemPromptFromMessages(options.prompt);
@@ -1485,13 +1862,27 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
           });
 
           if (sessionId !== undefined) {
-            this.promptSessionStates = mergePromptSessionState({
-              previousSessionStates: this.promptSessionStates,
-              nextSessionState: {
-                sessionId,
-                serializedPromptMessages: promptQueryInput.serializedPromptMessages,
-              },
-            });
+            const serializedPromptMessages = promptQueryInput.serializedPromptMessages;
+            if (serializedPromptMessages !== undefined) {
+              this.promptSessionStates = mergePromptSessionState({
+                previousSessionStates: this.promptSessionStates,
+                nextSessionState: {
+                  sessionId,
+                  serializedPromptMessages,
+                },
+              });
+            }
+
+            if (incomingSessionKey !== undefined) {
+              this.incomingSessionStates = mergeIncomingSessionState({
+                previousIncomingSessionStates: this.incomingSessionStates,
+                nextIncomingSessionState: buildIncomingSessionState({
+                  incomingSessionKey,
+                  sessionId,
+                  promptMessages: options.prompt,
+                }),
+              });
+            }
           }
 
           if (

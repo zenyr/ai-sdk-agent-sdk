@@ -864,6 +864,402 @@ describe("provider settings contract", () => {
     expect(result.finishReason.unified).toBe("tool-calls");
   });
 
+  test("reuses session from conversationId header with single user turns", async () => {
+    const queryCalls: unknown[] = [];
+    let callCount = 0;
+
+    const { createAnthropic } = await importIndexWithMockedQuery({
+      queryCalls,
+      resultFactory: () => {
+        callCount += 1;
+
+        return {
+          type: "result",
+          subtype: "success",
+          stop_reason: "end_turn",
+          result: "ok",
+          usage: buildMockResultUsage(),
+          session_id: `session-header-${callCount}`,
+        };
+      },
+    });
+
+    const model = createAnthropic({})("claude-3-5-haiku-latest");
+
+    const firstTurnOptions = {
+      prompt: [
+        {
+          role: "user",
+          content: [{ type: "text", text: "첫 질문" }],
+        },
+      ],
+      headers: {
+        "x-conversation-id": "conversation-header-1",
+      },
+    };
+
+    await model.doGenerate(firstTurnOptions);
+
+    const secondTurnOptions = {
+      prompt: [
+        {
+          role: "user",
+          content: [{ type: "text", text: "두 번째 질문" }],
+        },
+      ],
+      headers: {
+        "x-conversation-id": "conversation-header-1",
+      },
+    };
+
+    await model.doGenerate(secondTurnOptions);
+
+    expect(queryCalls.length).toBe(2);
+
+    const resumedSessionId = readResumeFromQueryCall(queryCalls, 1);
+    expect(resumedSessionId).toBe("session-header-1");
+
+    const secondPrompt = readPromptFromQueryCall(queryCalls, 1);
+    expect(secondPrompt).toBeDefined();
+
+    if (secondPrompt === undefined) {
+      return;
+    }
+
+    expect(secondPrompt.includes("첫 질문")).toBeFalse();
+    expect(secondPrompt.includes("두 번째 질문")).toBeTrue();
+  });
+
+  test("reuses session from telemetry metadata conversationId", async () => {
+    const queryCalls: unknown[] = [];
+    let callCount = 0;
+
+    const { createAnthropic } = await importIndexWithMockedQuery({
+      queryCalls,
+      resultFactory: () => {
+        callCount += 1;
+
+        return {
+          type: "result",
+          subtype: "success",
+          stop_reason: "end_turn",
+          result: "ok",
+          usage: buildMockResultUsage(),
+          session_id: `session-telemetry-${callCount}`,
+        };
+      },
+    });
+
+    const model = createAnthropic({})("claude-3-5-haiku-latest");
+
+    const firstTurnOptions = {
+      prompt: [
+        {
+          role: "user",
+          content: [{ type: "text", text: "첫 질문" }],
+        },
+      ],
+      experimental_telemetry: {
+        metadata: {
+          conversationId: "conversation-telemetry-1",
+        },
+      },
+    };
+
+    await model.doGenerate(firstTurnOptions);
+
+    const secondTurnOptions = {
+      prompt: [
+        {
+          role: "user",
+          content: [{ type: "text", text: "두 번째 질문" }],
+        },
+      ],
+      experimental_telemetry: {
+        metadata: {
+          conversationId: "conversation-telemetry-1",
+        },
+      },
+    };
+
+    await model.doGenerate(secondTurnOptions);
+
+    expect(queryCalls.length).toBe(2);
+    expect(readResumeFromQueryCall(queryCalls, 1)).toBe("session-telemetry-1");
+  });
+
+  test("reuses session from providerOptions agentSdk conversationId", async () => {
+    const queryCalls: unknown[] = [];
+    let callCount = 0;
+
+    const { createAnthropic } = await importIndexWithMockedQuery({
+      queryCalls,
+      resultFactory: () => {
+        callCount += 1;
+
+        return {
+          type: "result",
+          subtype: "success",
+          stop_reason: "end_turn",
+          result: "ok",
+          usage: buildMockResultUsage(),
+          session_id: `session-provider-options-${callCount}`,
+        };
+      },
+    });
+
+    const model = createAnthropic({})("claude-3-5-haiku-latest");
+
+    const firstTurnOptions = {
+      prompt: [
+        {
+          role: "user",
+          content: [{ type: "text", text: "첫 질문" }],
+        },
+      ],
+      providerOptions: {
+        agentSdk: {
+          conversationId: "conversation-provider-options-1",
+        },
+      },
+    };
+
+    await model.doGenerate(firstTurnOptions);
+
+    const secondTurnOptions = {
+      prompt: [
+        {
+          role: "user",
+          content: [{ type: "text", text: "두 번째 질문" }],
+        },
+      ],
+      providerOptions: {
+        agentSdk: {
+          conversationId: "conversation-provider-options-1",
+        },
+      },
+    };
+
+    await model.doGenerate(secondTurnOptions);
+
+    expect(queryCalls.length).toBe(2);
+    expect(readResumeFromQueryCall(queryCalls, 1)).toBe("session-provider-options-1");
+  });
+
+  test("legacy compatibility: reuses session from x-opencode-session header", async () => {
+    const queryCalls: unknown[] = [];
+    let callCount = 0;
+
+    const { createAnthropic } = await importIndexWithMockedQuery({
+      queryCalls,
+      resultFactory: () => {
+        callCount += 1;
+
+        return {
+          type: "result",
+          subtype: "success",
+          stop_reason: "end_turn",
+          result: "ok",
+          usage: buildMockResultUsage(),
+          session_id: `legacy-header-session-${callCount}`,
+        };
+      },
+    });
+
+    const model = createAnthropic({})("claude-3-5-haiku-latest");
+
+    await model.doGenerate({
+      prompt: [
+        {
+          role: "user",
+          content: [{ type: "text", text: "첫 질문" }],
+        },
+      ],
+      headers: {
+        "x-opencode-session": "legacy-opencode-header-1",
+      },
+    });
+
+    await model.doGenerate({
+      prompt: [
+        {
+          role: "user",
+          content: [{ type: "text", text: "두 번째 질문" }],
+        },
+      ],
+      headers: {
+        "x-opencode-session": "legacy-opencode-header-1",
+      },
+    });
+
+    expect(queryCalls.length).toBe(2);
+    expect(readResumeFromQueryCall(queryCalls, 1)).toBe("legacy-header-session-1");
+  });
+
+  test("legacy compatibility: reuses session from telemetry metadata sessionId", async () => {
+    const queryCalls: unknown[] = [];
+    let callCount = 0;
+
+    const { createAnthropic } = await importIndexWithMockedQuery({
+      queryCalls,
+      resultFactory: () => {
+        callCount += 1;
+
+        return {
+          type: "result",
+          subtype: "success",
+          stop_reason: "end_turn",
+          result: "ok",
+          usage: buildMockResultUsage(),
+          session_id: `legacy-telemetry-session-${callCount}`,
+        };
+      },
+    });
+
+    const model = createAnthropic({})("claude-3-5-haiku-latest");
+
+    await model.doGenerate({
+      prompt: [
+        {
+          role: "user",
+          content: [{ type: "text", text: "첫 질문" }],
+        },
+      ],
+      experimental_telemetry: {
+        metadata: {
+          sessionId: "legacy-telemetry-session-key-1",
+        },
+      },
+    });
+
+    await model.doGenerate({
+      prompt: [
+        {
+          role: "user",
+          content: [{ type: "text", text: "두 번째 질문" }],
+        },
+      ],
+      experimental_telemetry: {
+        metadata: {
+          sessionId: "legacy-telemetry-session-key-1",
+        },
+      },
+    });
+
+    expect(queryCalls.length).toBe(2);
+    expect(readResumeFromQueryCall(queryCalls, 1)).toBe("legacy-telemetry-session-1");
+  });
+
+  test("legacy compatibility: reuses session from providerOptions opencode promptCacheKey", async () => {
+    const queryCalls: unknown[] = [];
+    let callCount = 0;
+
+    const { createAnthropic } = await importIndexWithMockedQuery({
+      queryCalls,
+      resultFactory: () => {
+        callCount += 1;
+
+        return {
+          type: "result",
+          subtype: "success",
+          stop_reason: "end_turn",
+          result: "ok",
+          usage: buildMockResultUsage(),
+          session_id: `legacy-provider-options-session-${callCount}`,
+        };
+      },
+    });
+
+    const model = createAnthropic({})("claude-3-5-haiku-latest");
+
+    await model.doGenerate({
+      prompt: [
+        {
+          role: "user",
+          content: [{ type: "text", text: "첫 질문" }],
+        },
+      ],
+      providerOptions: {
+        opencode: {
+          promptCacheKey: "legacy-provider-options-key-1",
+        },
+      },
+    });
+
+    await model.doGenerate({
+      prompt: [
+        {
+          role: "user",
+          content: [{ type: "text", text: "두 번째 질문" }],
+        },
+      ],
+      providerOptions: {
+        opencode: {
+          promptCacheKey: "legacy-provider-options-key-1",
+        },
+      },
+    });
+
+    expect(queryCalls.length).toBe(2);
+    expect(readResumeFromQueryCall(queryCalls, 1)).toBe("legacy-provider-options-session-1");
+  });
+
+  test("legacy compatibility: reuses session from providerOptions anthropic promptCacheKey", async () => {
+    const queryCalls: unknown[] = [];
+    let callCount = 0;
+
+    const { createAnthropic } = await importIndexWithMockedQuery({
+      queryCalls,
+      resultFactory: () => {
+        callCount += 1;
+
+        return {
+          type: "result",
+          subtype: "success",
+          stop_reason: "end_turn",
+          result: "ok",
+          usage: buildMockResultUsage(),
+          session_id: `legacy-anthropic-provider-options-session-${callCount}`,
+        };
+      },
+    });
+
+    const model = createAnthropic({})("claude-3-5-haiku-latest");
+
+    await model.doGenerate({
+      prompt: [
+        {
+          role: "user",
+          content: [{ type: "text", text: "첫 질문" }],
+        },
+      ],
+      providerOptions: {
+        anthropic: {
+          promptCacheKey: "legacy-anthropic-provider-options-key-1",
+        },
+      },
+    });
+
+    await model.doGenerate({
+      prompt: [
+        {
+          role: "user",
+          content: [{ type: "text", text: "두 번째 질문" }],
+        },
+      ],
+      providerOptions: {
+        anthropic: {
+          promptCacheKey: "legacy-anthropic-provider-options-key-1",
+        },
+      },
+    });
+
+    expect(queryCalls.length).toBe(2);
+    expect(readResumeFromQueryCall(queryCalls, 1)).toBe(
+      "legacy-anthropic-provider-options-session-1",
+    );
+  });
+
   test("reuses claude session with appended prompt messages", async () => {
     const queryCalls: unknown[] = [];
     let callCount = 0;
@@ -1225,6 +1621,7 @@ describe("provider settings contract", () => {
     }
 
     expect(prompt.includes("[system]")).toBeFalse();
+    expect(prompt.includes("[user]")).toBeFalse();
     expect(prompt.includes("Say hello.")).toBeTrue();
   });
 

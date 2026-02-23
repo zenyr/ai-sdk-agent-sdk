@@ -54,6 +54,11 @@ export const serializeMessage = (message: LanguageModelV3Message): string => {
       return part.length > 0;
     })
     .join("\n");
+
+  if (message.role === "user") {
+    return serializedContent;
+  }
+
   return `[${message.role}]\n${serializedContent}`;
 };
 

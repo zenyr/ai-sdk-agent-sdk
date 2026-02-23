@@ -220,6 +220,7 @@ describe("stream bridge contract", () => {
       typeof options.systemPrompt === "string" ? options.systemPrompt : undefined;
     expect(systemPrompt).toBe("Follow system rules.");
     expect(prompt.includes("[system]")).toBeFalse();
+    expect(prompt.includes("[user]")).toBeFalse();
     expect(prompt.includes("hello")).toBeTrue();
   });
 
@@ -443,6 +444,184 @@ describe("stream bridge contract", () => {
 
     const resume = typeof options.resume === "string" ? options.resume : undefined;
     expect(resume).toBe("stream-session-1");
+  });
+
+  test("doStream reuses session from conversationId header with single user turns", async () => {
+    const queryCalls: unknown[] = [];
+    let callCount = 0;
+
+    mock.module("@anthropic-ai/claude-agent-sdk", () => {
+      return {
+        query: async function* (request: unknown) {
+          queryCalls.push(request);
+          callCount += 1;
+
+          yield {
+            type: "result",
+            subtype: "success",
+            stop_reason: "end_turn",
+            result: "ok",
+            usage: buildMockResultUsage(),
+            session_id: `stream-header-session-${callCount}`,
+          };
+        },
+      };
+    });
+
+    const moduleId = `../index.ts?stream-contract-header-resume-${Date.now()}-${Math.random()}`;
+    const { anthropic } = await import(moduleId);
+    const model = anthropic("claude-3-5-haiku-latest");
+
+    const firstTurnOptions = {
+      prompt: [
+        {
+          role: "user",
+          content: [{ type: "text", text: "첫 질문" }],
+        },
+      ],
+      headers: {
+        "x-conversation-id": "conversation-stream-header-1",
+      },
+    };
+
+    const firstStreamResult = await model.doStream(firstTurnOptions);
+    for await (const _part of firstStreamResult.stream) {
+      // consume to completion
+    }
+
+    const secondTurnOptions = {
+      prompt: [
+        {
+          role: "user",
+          content: [{ type: "text", text: "두 번째 질문" }],
+        },
+      ],
+      headers: {
+        "x-conversation-id": "conversation-stream-header-1",
+      },
+    };
+
+    const secondStreamResult = await model.doStream(secondTurnOptions);
+    for await (const _part of secondStreamResult.stream) {
+      // consume to completion
+    }
+
+    expect(queryCalls.length).toBe(2);
+
+    const secondCall = queryCalls[1];
+    expect(typeof secondCall).toBe("object");
+    expect(secondCall).not.toBeNull();
+
+    if (typeof secondCall !== "object" || secondCall === null) {
+      return;
+    }
+
+    const options =
+      typeof secondCall.options === "object" && secondCall.options !== null
+        ? secondCall.options
+        : undefined;
+
+    expect(options).toBeDefined();
+
+    if (options === undefined) {
+      return;
+    }
+
+    const resume = typeof options.resume === "string" ? options.resume : undefined;
+    expect(resume).toBe("stream-header-session-1");
+
+    const secondPrompt = typeof secondCall.prompt === "string" ? secondCall.prompt : undefined;
+    expect(secondPrompt).toBeDefined();
+
+    if (secondPrompt === undefined) {
+      return;
+    }
+
+    expect(secondPrompt.includes("첫 질문")).toBeFalse();
+    expect(secondPrompt.includes("두 번째 질문")).toBeTrue();
+  });
+
+  test("legacy compatibility: doStream reuses session from x-opencode-session header", async () => {
+    const queryCalls: unknown[] = [];
+    let callCount = 0;
+
+    mock.module("@anthropic-ai/claude-agent-sdk", () => {
+      return {
+        query: async function* (request: unknown) {
+          queryCalls.push(request);
+          callCount += 1;
+
+          yield {
+            type: "result",
+            subtype: "success",
+            stop_reason: "end_turn",
+            result: "ok",
+            usage: buildMockResultUsage(),
+            session_id: `stream-legacy-header-session-${callCount}`,
+          };
+        },
+      };
+    });
+
+    const moduleId = `../index.ts?stream-contract-legacy-header-resume-${Date.now()}-${Math.random()}`;
+    const { anthropic } = await import(moduleId);
+    const model = anthropic("claude-3-5-haiku-latest");
+
+    const firstStreamResult = await model.doStream({
+      prompt: [
+        {
+          role: "user",
+          content: [{ type: "text", text: "첫 질문" }],
+        },
+      ],
+      headers: {
+        "x-opencode-session": "legacy-stream-header-1",
+      },
+    });
+
+    for await (const _part of firstStreamResult.stream) {
+      // consume to completion
+    }
+
+    const secondStreamResult = await model.doStream({
+      prompt: [
+        {
+          role: "user",
+          content: [{ type: "text", text: "두 번째 질문" }],
+        },
+      ],
+      headers: {
+        "x-opencode-session": "legacy-stream-header-1",
+      },
+    });
+
+    for await (const _part of secondStreamResult.stream) {
+      // consume to completion
+    }
+
+    expect(queryCalls.length).toBe(2);
+
+    const secondCall = queryCalls[1];
+    expect(typeof secondCall).toBe("object");
+    expect(secondCall).not.toBeNull();
+
+    if (typeof secondCall !== "object" || secondCall === null) {
+      return;
+    }
+
+    const options =
+      typeof secondCall.options === "object" && secondCall.options !== null
+        ? secondCall.options
+        : undefined;
+
+    expect(options).toBeDefined();
+
+    if (options === undefined) {
+      return;
+    }
+
+    const resume = typeof options.resume === "string" ? options.resume : undefined;
+    expect(resume).toBe("stream-legacy-header-session-1");
   });
 
   test("tool mode emits tool-call from buffered stream text envelope", async () => {
