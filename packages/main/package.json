@@ -25,6 +25,8 @@
   ],
   "scripts": {
     "build": "rm -rf ./dist && bun build ./index.ts --target=node --format=esm --outdir ./dist --external @ai-sdk/anthropic --external @ai-sdk/provider --external @ai-sdk/provider-utils --external @anthropic-ai/claude-agent-sdk",
+    "test": "bun test",
+    "lint": "biome check . --write --unsafe",
     "prepublishOnly": "bun run build"
   },
   "type": "module",
