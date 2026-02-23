@@ -13,6 +13,10 @@ const buildMockResultUsage = () => {
   };
 };
 
+const createUniqueCacheKey = (prefix: string): string => {
+  return `${prefix}-${Date.now()}-${Math.random()}`;
+};
+
 describe("stream bridge contract", () => {
   test("doStream emits metadata from stream events", async () => {
     mock.module("@anthropic-ai/claude-agent-sdk", () => {
@@ -447,6 +451,7 @@ describe("stream bridge contract", () => {
   });
 
   test("doStream reuses session from conversationId header with single user turns", async () => {
+    const conversationId = createUniqueCacheKey("conversation-stream-header");
     const queryCalls: unknown[] = [];
     let callCount = 0;
 
@@ -480,7 +485,7 @@ describe("stream bridge contract", () => {
         },
       ],
       headers: {
-        "x-conversation-id": "conversation-stream-header-1",
+        "x-conversation-id": conversationId,
       },
     };
 
@@ -497,7 +502,7 @@ describe("stream bridge contract", () => {
         },
       ],
       headers: {
-        "x-conversation-id": "conversation-stream-header-1",
+        "x-conversation-id": conversationId,
       },
     };
 
@@ -542,6 +547,7 @@ describe("stream bridge contract", () => {
   });
 
   test("legacy compatibility: doStream reuses session from x-opencode-session header", async () => {
+    const legacyConversationKey = createUniqueCacheKey("legacy-stream-header");
     const queryCalls: unknown[] = [];
     let callCount = 0;
 
@@ -575,7 +581,7 @@ describe("stream bridge contract", () => {
         },
       ],
       headers: {
-        "x-opencode-session": "legacy-stream-header-1",
+        "x-opencode-session": legacyConversationKey,
       },
     });
 
@@ -591,7 +597,7 @@ describe("stream bridge contract", () => {
         },
       ],
       headers: {
-        "x-opencode-session": "legacy-stream-header-1",
+        "x-opencode-session": legacyConversationKey,
       },
     });
 

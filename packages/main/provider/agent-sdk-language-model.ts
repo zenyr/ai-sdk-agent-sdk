@@ -53,6 +53,7 @@ import {
 } from "../shared/stream-types";
 import type { ToolExecutorMap } from "../shared/tool-executor";
 import { isRecord, readRecord, readString, safeJsonStringify } from "../shared/type-readers";
+import { type IncomingSessionState, incomingSessionStore } from "./incoming-session-store";
 
 const isAssistantMessage = (message: SDKMessage): message is SDKAssistantMessage => {
   return message.type === "assistant";
@@ -128,14 +129,6 @@ type PromptSessionState = {
   serializedPromptMessages: string[];
 };
 
-type IncomingSessionState = {
-  incomingSessionKey: string;
-  sessionId: string;
-  promptMessageCount: number;
-  firstPromptMessageSignature?: string;
-  lastPromptMessageSignature?: string;
-};
-
 type PromptQueryInput = {
   prompt: string;
   serializedPromptMessages?: string[];
@@ -144,11 +137,10 @@ type PromptQueryInput = {
 
 type PromptQueryBuildResult = {
   promptQueryInput: PromptQueryInput;
-  incomingSessionKey?: string;
 };
 
 const MAX_PROMPT_SESSION_STATES = 20;
-const MAX_INCOMING_SESSION_STATES = 200;
+const MAX_INCOMING_SESSION_STATES = 100;
 const CONVERSATION_ID_HEADER = "x-conversation-id";
 const LEGACY_OPENCODE_SESSION_HEADER = "x-opencode-session";
 const CONVERSATION_ID_CANDIDATE_KEYS = ["conversationId", "conversationID", "conversation_id"];
@@ -618,10 +610,11 @@ const buildPromptQueryInputFromIncomingSession = (args: {
 
 const buildPromptQueryInputWithIncomingSession = (args: {
   options: LanguageModelV3CallOptions;
+  incomingSessionKey: string | undefined;
   previousSessionStates: PromptSessionState[];
   previousIncomingSessionStates: IncomingSessionState[];
 }): PromptQueryBuildResult => {
-  const incomingSessionKey = readIncomingSessionKey(args.options);
+  const { incomingSessionKey } = args;
 
   if (incomingSessionKey === undefined) {
     return {
@@ -639,7 +632,6 @@ const buildPromptQueryInputWithIncomingSession = (args: {
 
   if (incomingSessionState === undefined) {
     return {
-      incomingSessionKey,
       promptQueryInput: buildPromptQueryInputWithoutResume(args.options.prompt),
     };
   }
@@ -651,13 +643,11 @@ const buildPromptQueryInputWithIncomingSession = (args: {
 
   if (promptQueryInputFromIncomingSession !== undefined) {
     return {
-      incomingSessionKey,
       promptQueryInput: promptQueryInputFromIncomingSession,
     };
   }
 
   return {
-    incomingSessionKey,
     promptQueryInput: buildPromptQueryInput({
       promptMessages: args.options.prompt,
       previousSessionStates: args.previousSessionStates,
@@ -987,13 +977,67 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
     this.supportedUrls = DEFAULT_SUPPORTED_URLS;
   }
 
+  private async hydrateIncomingSessionState(incomingSessionKey: string): Promise<void> {
+    const existingIncomingSessionState = findIncomingSessionState({
+      incomingSessionKey,
+      previousIncomingSessionStates: this.incomingSessionStates,
+    });
+
+    if (existingIncomingSessionState !== undefined) {
+      return;
+    }
+
+    const persistedIncomingSessionState = await incomingSessionStore
+      .get({
+        modelId: this.modelId,
+        incomingSessionKey,
+      })
+      .catch(() => {
+        return undefined;
+      });
+
+    if (persistedIncomingSessionState === undefined) {
+      return;
+    }
+
+    this.incomingSessionStates = mergeIncomingSessionState({
+      previousIncomingSessionStates: this.incomingSessionStates,
+      nextIncomingSessionState: persistedIncomingSessionState,
+    });
+  }
+
+  private async persistIncomingSessionState(
+    incomingSessionState: IncomingSessionState,
+  ): Promise<void> {
+    this.incomingSessionStates = mergeIncomingSessionState({
+      previousIncomingSessionStates: this.incomingSessionStates,
+      nextIncomingSessionState: incomingSessionState,
+    });
+
+    await incomingSessionStore
+      .set({
+        modelId: this.modelId,
+        incomingSessionKey: incomingSessionState.incomingSessionKey,
+        state: incomingSessionState,
+      })
+      .catch(() => {
+        return undefined;
+      });
+  }
+
   async doGenerate(options: LanguageModelV3CallOptions): Promise<LanguageModelV3GenerateResult> {
     const completionMode = buildCompletionMode(options);
     const anthropicOptions = parseAnthropicProviderOptions(options);
     const warnings = [...collectWarnings(options, completionMode), ...this.providerSettingWarnings];
 
-    const { promptQueryInput, incomingSessionKey } = buildPromptQueryInputWithIncomingSession({
+    const incomingSessionKey = readIncomingSessionKey(options);
+    if (incomingSessionKey !== undefined) {
+      await this.hydrateIncomingSessionState(incomingSessionKey);
+    }
+
+    const { promptQueryInput } = buildPromptQueryInputWithIncomingSession({
       options,
+      incomingSessionKey,
       previousSessionStates: this.promptSessionStates,
       previousIncomingSessionStates: this.incomingSessionStates,
     });
@@ -1197,14 +1241,13 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
       }
 
       if (incomingSessionKey !== undefined) {
-        this.incomingSessionStates = mergeIncomingSessionState({
-          previousIncomingSessionStates: this.incomingSessionStates,
-          nextIncomingSessionState: buildIncomingSessionState({
+        await this.persistIncomingSessionState(
+          buildIncomingSessionState({
             incomingSessionKey,
             sessionId,
             promptMessages: options.prompt,
           }),
-        });
+        );
       }
     }
 
@@ -1519,8 +1562,14 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
     const anthropicOptions = parseAnthropicProviderOptions(options);
     const warnings = [...collectWarnings(options, completionMode), ...this.providerSettingWarnings];
 
-    const { promptQueryInput, incomingSessionKey } = buildPromptQueryInputWithIncomingSession({
+    const incomingSessionKey = readIncomingSessionKey(options);
+    if (incomingSessionKey !== undefined) {
+      await this.hydrateIncomingSessionState(incomingSessionKey);
+    }
+
+    const { promptQueryInput } = buildPromptQueryInputWithIncomingSession({
       options,
+      incomingSessionKey,
       previousSessionStates: this.promptSessionStates,
       previousIncomingSessionStates: this.incomingSessionStates,
     });
@@ -1874,14 +1923,13 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
             }
 
             if (incomingSessionKey !== undefined) {
-              this.incomingSessionStates = mergeIncomingSessionState({
-                previousIncomingSessionStates: this.incomingSessionStates,
-                nextIncomingSessionState: buildIncomingSessionState({
+              await this.persistIncomingSessionState(
+                buildIncomingSessionState({
                   incomingSessionKey,
                   sessionId,
                   promptMessages: options.prompt,
                 }),
-              });
+              );
             }
           }
 

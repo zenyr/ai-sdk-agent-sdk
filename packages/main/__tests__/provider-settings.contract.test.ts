@@ -1,4 +1,7 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
+import { rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 afterEach(() => {
   mock.restore();
@@ -136,6 +139,10 @@ const readSystemPromptFromFirstQueryCall = (queryCalls: unknown[]): string | und
   }
 
   return systemPrompt;
+};
+
+const createUniqueCacheKey = (prefix: string): string => {
+  return `${prefix}-${Date.now()}-${Math.random()}`;
 };
 
 const importIndexWithMockedQuery = async (args: {
@@ -865,6 +872,7 @@ describe("provider settings contract", () => {
   });
 
   test("reuses session from conversationId header with single user turns", async () => {
+    const conversationId = createUniqueCacheKey("conversation-header");
     const queryCalls: unknown[] = [];
     let callCount = 0;
 
@@ -894,7 +902,7 @@ describe("provider settings contract", () => {
         },
       ],
       headers: {
-        "x-conversation-id": "conversation-header-1",
+        "x-conversation-id": conversationId,
       },
     };
 
@@ -908,7 +916,7 @@ describe("provider settings contract", () => {
         },
       ],
       headers: {
-        "x-conversation-id": "conversation-header-1",
+        "x-conversation-id": conversationId,
       },
     };
 
@@ -931,6 +939,7 @@ describe("provider settings contract", () => {
   });
 
   test("reuses session from telemetry metadata conversationId", async () => {
+    const conversationId = createUniqueCacheKey("conversation-telemetry");
     const queryCalls: unknown[] = [];
     let callCount = 0;
 
@@ -961,7 +970,7 @@ describe("provider settings contract", () => {
       ],
       experimental_telemetry: {
         metadata: {
-          conversationId: "conversation-telemetry-1",
+          conversationId,
         },
       },
     };
@@ -977,7 +986,7 @@ describe("provider settings contract", () => {
       ],
       experimental_telemetry: {
         metadata: {
-          conversationId: "conversation-telemetry-1",
+          conversationId,
         },
       },
     };
@@ -989,6 +998,7 @@ describe("provider settings contract", () => {
   });
 
   test("reuses session from providerOptions agentSdk conversationId", async () => {
+    const conversationId = createUniqueCacheKey("conversation-provider-options");
     const queryCalls: unknown[] = [];
     let callCount = 0;
 
@@ -1019,7 +1029,7 @@ describe("provider settings contract", () => {
       ],
       providerOptions: {
         agentSdk: {
-          conversationId: "conversation-provider-options-1",
+          conversationId,
         },
       },
     };
@@ -1035,7 +1045,7 @@ describe("provider settings contract", () => {
       ],
       providerOptions: {
         agentSdk: {
-          conversationId: "conversation-provider-options-1",
+          conversationId,
         },
       },
     };
@@ -1047,6 +1057,7 @@ describe("provider settings contract", () => {
   });
 
   test("legacy compatibility: reuses session from x-opencode-session header", async () => {
+    const legacyConversationKey = createUniqueCacheKey("legacy-opencode-header");
     const queryCalls: unknown[] = [];
     let callCount = 0;
 
@@ -1076,7 +1087,7 @@ describe("provider settings contract", () => {
         },
       ],
       headers: {
-        "x-opencode-session": "legacy-opencode-header-1",
+        "x-opencode-session": legacyConversationKey,
       },
     });
 
@@ -1088,7 +1099,7 @@ describe("provider settings contract", () => {
         },
       ],
       headers: {
-        "x-opencode-session": "legacy-opencode-header-1",
+        "x-opencode-session": legacyConversationKey,
       },
     });
 
@@ -1097,6 +1108,7 @@ describe("provider settings contract", () => {
   });
 
   test("legacy compatibility: reuses session from telemetry metadata sessionId", async () => {
+    const legacyTelemetrySessionKey = createUniqueCacheKey("legacy-telemetry-session-key");
     const queryCalls: unknown[] = [];
     let callCount = 0;
 
@@ -1127,7 +1139,7 @@ describe("provider settings contract", () => {
       ],
       experimental_telemetry: {
         metadata: {
-          sessionId: "legacy-telemetry-session-key-1",
+          sessionId: legacyTelemetrySessionKey,
         },
       },
     });
@@ -1141,7 +1153,7 @@ describe("provider settings contract", () => {
       ],
       experimental_telemetry: {
         metadata: {
-          sessionId: "legacy-telemetry-session-key-1",
+          sessionId: legacyTelemetrySessionKey,
         },
       },
     });
@@ -1151,6 +1163,7 @@ describe("provider settings contract", () => {
   });
 
   test("legacy compatibility: reuses session from providerOptions opencode promptCacheKey", async () => {
+    const legacyPromptCacheKey = createUniqueCacheKey("legacy-provider-options-key");
     const queryCalls: unknown[] = [];
     let callCount = 0;
 
@@ -1181,7 +1194,7 @@ describe("provider settings contract", () => {
       ],
       providerOptions: {
         opencode: {
-          promptCacheKey: "legacy-provider-options-key-1",
+          promptCacheKey: legacyPromptCacheKey,
         },
       },
     });
@@ -1195,7 +1208,7 @@ describe("provider settings contract", () => {
       ],
       providerOptions: {
         opencode: {
-          promptCacheKey: "legacy-provider-options-key-1",
+          promptCacheKey: legacyPromptCacheKey,
         },
       },
     });
@@ -1205,6 +1218,9 @@ describe("provider settings contract", () => {
   });
 
   test("legacy compatibility: reuses session from providerOptions anthropic promptCacheKey", async () => {
+    const legacyAnthropicPromptCacheKey = createUniqueCacheKey(
+      "legacy-anthropic-provider-options-key",
+    );
     const queryCalls: unknown[] = [];
     let callCount = 0;
 
@@ -1235,7 +1251,7 @@ describe("provider settings contract", () => {
       ],
       providerOptions: {
         anthropic: {
-          promptCacheKey: "legacy-anthropic-provider-options-key-1",
+          promptCacheKey: legacyAnthropicPromptCacheKey,
         },
       },
     });
@@ -1249,7 +1265,7 @@ describe("provider settings contract", () => {
       ],
       providerOptions: {
         anthropic: {
-          promptCacheKey: "legacy-anthropic-provider-options-key-1",
+          promptCacheKey: legacyAnthropicPromptCacheKey,
         },
       },
     });
@@ -1258,6 +1274,164 @@ describe("provider settings contract", () => {
     expect(readResumeFromQueryCall(queryCalls, 1)).toBe(
       "legacy-anthropic-provider-options-session-1",
     );
+  });
+
+  test("persists conversationId join across model instance reload", async () => {
+    const previousXdgCacheHome = process.env.XDG_CACHE_HOME;
+    const xdgCacheHome = join(tmpdir(), createUniqueCacheKey("agent-sdk-session-cache"));
+    process.env.XDG_CACHE_HOME = xdgCacheHome;
+
+    try {
+      const conversationId = createUniqueCacheKey("conversation-persisted");
+      const firstQueryCalls: unknown[] = [];
+
+      const firstImport = await importIndexWithMockedQuery({
+        queryCalls: firstQueryCalls,
+        resultFactory: () => {
+          return {
+            type: "result",
+            subtype: "success",
+            stop_reason: "end_turn",
+            result: "ok",
+            usage: buildMockResultUsage(),
+            session_id: "persisted-session-id",
+          };
+        },
+      });
+
+      const firstModel = firstImport.createAnthropic({})("claude-3-5-haiku-latest");
+      await firstModel.doGenerate({
+        prompt: [
+          {
+            role: "user",
+            content: [{ type: "text", text: "첫 질문" }],
+          },
+        ],
+        headers: {
+          "x-conversation-id": conversationId,
+        },
+      });
+
+      const secondQueryCalls: unknown[] = [];
+      const secondImport = await importIndexWithMockedQuery({
+        queryCalls: secondQueryCalls,
+        resultFactory: () => {
+          return {
+            type: "result",
+            subtype: "success",
+            stop_reason: "end_turn",
+            result: "ok",
+            usage: buildMockResultUsage(),
+            session_id: "fresh-session-id",
+          };
+        },
+      });
+
+      const secondModel = secondImport.createAnthropic({})("claude-3-5-haiku-latest");
+      await secondModel.doGenerate({
+        prompt: [
+          {
+            role: "user",
+            content: [{ type: "text", text: "두 번째 질문" }],
+          },
+        ],
+        headers: {
+          "x-conversation-id": conversationId,
+        },
+      });
+
+      expect(secondQueryCalls.length).toBe(1);
+      expect(readResumeFromQueryCall(secondQueryCalls, 0)).toBe("persisted-session-id");
+    } finally {
+      if (previousXdgCacheHome === undefined) {
+        delete process.env.XDG_CACHE_HOME;
+      } else {
+        process.env.XDG_CACHE_HOME = previousXdgCacheHome;
+      }
+
+      await rm(xdgCacheHome, { recursive: true, force: true }).catch(() => {
+        return undefined;
+      });
+    }
+  });
+
+  test("does not reuse persisted session when model id differs", async () => {
+    const previousXdgCacheHome = process.env.XDG_CACHE_HOME;
+    const xdgCacheHome = join(tmpdir(), createUniqueCacheKey("agent-sdk-session-cache"));
+    process.env.XDG_CACHE_HOME = xdgCacheHome;
+
+    try {
+      const conversationId = createUniqueCacheKey("conversation-model-scope");
+      const firstQueryCalls: unknown[] = [];
+
+      const firstImport = await importIndexWithMockedQuery({
+        queryCalls: firstQueryCalls,
+        resultFactory: () => {
+          return {
+            type: "result",
+            subtype: "success",
+            stop_reason: "end_turn",
+            result: "ok",
+            usage: buildMockResultUsage(),
+            session_id: "model-a-session-id",
+          };
+        },
+      });
+
+      const firstModel = firstImport.createAnthropic({})("claude-3-5-haiku-latest");
+      await firstModel.doGenerate({
+        prompt: [
+          {
+            role: "user",
+            content: [{ type: "text", text: "첫 질문" }],
+          },
+        ],
+        headers: {
+          "x-conversation-id": conversationId,
+        },
+      });
+
+      const secondQueryCalls: unknown[] = [];
+      const secondImport = await importIndexWithMockedQuery({
+        queryCalls: secondQueryCalls,
+        resultFactory: () => {
+          return {
+            type: "result",
+            subtype: "success",
+            stop_reason: "end_turn",
+            result: "ok",
+            usage: buildMockResultUsage(),
+            session_id: "model-b-session-id",
+          };
+        },
+      });
+
+      const secondModel = secondImport.createAnthropic({})("claude-opus-4-1");
+      await secondModel.doGenerate({
+        prompt: [
+          {
+            role: "user",
+            content: [{ type: "text", text: "두 번째 질문" }],
+          },
+        ],
+        headers: {
+          "x-conversation-id": conversationId,
+        },
+      });
+
+      expect(secondQueryCalls.length).toBe(1);
+      expect(readResumeFromQueryCall(secondQueryCalls, 0)).toBeUndefined();
+    } finally {
+      if (previousXdgCacheHome === undefined) {
+        delete process.env.XDG_CACHE_HOME;
+      } else {
+        process.env.XDG_CACHE_HOME = previousXdgCacheHome;
+      }
+
+      await rm(xdgCacheHome, { recursive: true, force: true }).catch(() => {
+        return undefined;
+      });
+    }
   });
 
   test("reuses claude session with appended prompt messages", async () => {
