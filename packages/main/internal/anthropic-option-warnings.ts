@@ -11,13 +11,14 @@ const DEGRADE_ONLY_OPTIONS = new Set([
   'toolStreaming',
 ]);
 
-const UNSUPPORTED_OPTIONS = new Set([
-  'cacheControl',
-  'mcpServers',
-  'container',
-  'speed',
-  'contextManagement',
-]);
+const UNSUPPORTED_OPTION_DETAILS: Record<string, string> = {
+  cacheControl:
+    'This option is not supported on the Agent SDK backend. Prompt cache TTL (including 1h cache) cannot be configured via claude-agent-sdk options.',
+  mcpServers: 'This option is not supported on the Agent SDK backend.',
+  container: 'This option is not supported on the Agent SDK backend.',
+  speed: 'This option is not supported on the Agent SDK backend.',
+  contextManagement: 'This option is not supported on the Agent SDK backend.',
+};
 
 const MAPPED_OPTIONS = new Set(['effort', 'thinking']);
 
@@ -50,11 +51,11 @@ export const collectAnthropicProviderOptionWarnings = (
       continue;
     }
 
-    if (UNSUPPORTED_OPTIONS.has(optionName)) {
+    if (optionName in UNSUPPORTED_OPTION_DETAILS) {
       warnings.push({
         type: 'unsupported',
         feature: `providerOptions.anthropic.${optionName}`,
-        details: 'This option is not supported on the Agent SDK backend.',
+        details: UNSUPPORTED_OPTION_DETAILS[optionName],
       });
       continue;
     }

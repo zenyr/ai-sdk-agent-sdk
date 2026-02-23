@@ -40,6 +40,20 @@ describe('collectAnthropicProviderOptionWarnings', () => {
       'providerOptions.anthropic.sendReasoning',
     ]);
 
+    const cacheControlWarning = warnings.find(warning => {
+      return (
+        warning.type === 'unsupported' &&
+        'feature' in warning &&
+        warning.feature === 'providerOptions.anthropic.cacheControl'
+      );
+    });
+
+    expect(cacheControlWarning).toBeDefined();
+
+    if (cacheControlWarning !== undefined) {
+      expect(cacheControlWarning.details.includes('1h cache')).toBeTrue();
+    }
+
     const otherMessages = warnings
       .filter(warning => warning.type === 'other')
       .map(warning => warning.message);
