@@ -1,0 +1,43 @@
+{
+  "name": "ai-sdk-agent-sdk-adapter-v3",
+  "version": "0.0.1-rc2",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "bun": "./index.ts",
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./bun": {
+      "types": "./dist/index.d.ts",
+      "bun": "./bun.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "index.ts",
+    "bun.ts"
+  ],
+  "scripts": {
+    "build": "rm -rf ./dist && bun build ./index.ts --target=node --format=esm --outdir ./dist --external ai-sdk-agent-sdk --external @ai-sdk/anthropic",
+    "test": "bun test",
+    "lint": "biome check . --write --unsafe",
+    "prepublishOnly": "bun run build"
+  },
+  "type": "module",
+  "private": false,
+  "dependencies": {
+    "ai-sdk-agent-sdk": "workspace:*",
+    "@ai-sdk/anthropic": "latest"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  }
+}
