@@ -1,6 +1,6 @@
 {
   "name": "@zenyr/ai-sdk-agent-sdk-adapter-v2",
-  "version": "0.0.3",
+  "version": "0.0.4-rc.0",
   "main": "./dist/index.js",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -35,7 +35,7 @@
     "ai-sdk-agent-sdk": "workspace:*"
   },
   "peerDependencies": {
-    "ai-sdk-agent-sdk": "*",
+    "ai-sdk-agent-sdk": "0.0.5-rc.0",
     "@ai-sdk/anthropic": "^3",
     "@ai-sdk/provider": "^3",
     "typescript": "^5"

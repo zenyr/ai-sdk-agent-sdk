@@ -1,5 +1,11 @@
 # ai-sdk-agent-sdk
 
+## 0.0.5-rc.0
+
+### Patch Changes
+
+- 9961a0b: test: verify rc release workflow
+
 ## 0.0.4
 
 ### Patch Changes
