@@ -46,6 +46,7 @@ import {
 } from "../shared/stream-types";
 import type { ToolExecutorMap } from "../shared/tool-executor";
 import { isRecord, readRecord, readString, safeJsonStringify } from "../shared/type-readers";
+import { claudeAgentRuntime } from "./adapters/claude-agent-runtime";
 import {
   buildIncomingSessionState,
   buildPromptQueryInputWithIncomingSession,
@@ -58,6 +59,7 @@ import { mergePromptSessionState, type PromptSessionState } from "./domain/promp
 import { buildQueryEnv } from "./domain/query-env";
 import { readIncomingSessionKey } from "./domain/session-key";
 import { type IncomingSessionState, incomingSessionStore } from "./incoming-session-store";
+import type { AgentRuntimePort } from "./ports/agent-runtime-port";
 import type { IncomingSessionStorePort } from "./ports/incoming-session-store-port";
 
 const isAssistantMessage = (message: SDKMessage): message is SDKAssistantMessage => {
@@ -418,6 +420,7 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
   private readonly idGenerator: () => string;
   private readonly toolExecutors: ToolExecutorMap | undefined;
   private readonly maxTurns: number | undefined;
+  private readonly runtime: AgentRuntimePort;
   private readonly sessionStore: IncomingSessionStorePort;
   private readonly providerSettingWarnings: SharedV3Warning[];
   private promptSessionStates: PromptSessionState[] = [];
@@ -430,6 +433,7 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
     idGenerator: () => string;
     toolExecutors?: ToolExecutorMap;
     maxTurns?: number;
+    runtime?: AgentRuntimePort;
     sessionStore?: IncomingSessionStorePort;
   }) {
     this.modelId = args.modelId;
@@ -438,6 +442,7 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
     this.idGenerator = args.idGenerator;
     this.toolExecutors = args.toolExecutors;
     this.maxTurns = args.maxTurns;
+    this.runtime = args.runtime ?? claudeAgentRuntime;
     this.sessionStore = args.sessionStore ?? incomingSessionStore;
     this.providerSettingWarnings = collectProviderSettingWarnings(this.settings);
     this.supportedUrls = DEFAULT_SUPPORTED_URLS;
@@ -611,7 +616,7 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
     };
 
     try {
-      for await (const message of agentSdk.query({
+      for await (const message of this.runtime.query({
         prompt: queryPrompt,
         options: queryOptions,
       })) {
@@ -1161,7 +1166,7 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
         });
 
         try {
-          for await (const message of agentSdk.query({
+          for await (const message of this.runtime.query({
             prompt: queryPrompt,
             options: queryOptions,
           })) {
