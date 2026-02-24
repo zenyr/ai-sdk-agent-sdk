@@ -3,7 +3,6 @@
   "workspaces": [
     "packages/*"
   ],
-  "module": "index.ts",
   "type": "module",
   "private": true,
   "packageManager": "bun@1.3.9",
