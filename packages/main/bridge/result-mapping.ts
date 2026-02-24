@@ -8,10 +8,10 @@ import type {
 import { isRecord, readNumber, readString } from "../shared/type-readers";
 
 type ResultUsageLike = {
-  input_tokens: number;
-  output_tokens: number;
-  cache_read_input_tokens: number;
-  cache_creation_input_tokens: number;
+  input_tokens?: unknown;
+  output_tokens?: unknown;
+  cache_read_input_tokens?: unknown;
+  cache_creation_input_tokens?: unknown;
   iterations?: unknown;
 };
 
@@ -44,9 +44,11 @@ export const mapFinishReason = (rawFinishReason: string | null): LanguageModelV3
 };
 
 export const mapUsage = (resultMessage: ResultMessageLike): LanguageModelV3Usage => {
-  const totalInput = resultMessage.usage.input_tokens;
-  const cacheRead = resultMessage.usage.cache_read_input_tokens;
-  const cacheWrite = resultMessage.usage.cache_creation_input_tokens;
+  const usageRecord = isRecord(resultMessage.usage) ? resultMessage.usage : {};
+  const totalInput = readNumber(usageRecord, "input_tokens") ?? 0;
+  const cacheRead = readNumber(usageRecord, "cache_read_input_tokens") ?? 0;
+  const cacheWrite = readNumber(usageRecord, "cache_creation_input_tokens") ?? 0;
+  const outputTokens = readNumber(usageRecord, "output_tokens") ?? 0;
   const noCache = totalInput - cacheRead - cacheWrite;
 
   return {
@@ -57,8 +59,8 @@ export const mapUsage = (resultMessage: ResultMessageLike): LanguageModelV3Usage
       cacheWrite,
     },
     outputTokens: {
-      total: resultMessage.usage.output_tokens,
-      text: resultMessage.usage.output_tokens,
+      total: outputTokens,
+      text: outputTokens,
       reasoning: undefined,
     },
   };
@@ -67,7 +69,8 @@ export const mapUsage = (resultMessage: ResultMessageLike): LanguageModelV3Usage
 export const mapIterations = (
   resultMessage: ResultMessageLike,
 ): AnthropicUsageIteration[] | null => {
-  const iterations = resultMessage.usage.iterations;
+  const usageRecord = isRecord(resultMessage.usage) ? resultMessage.usage : {};
+  const iterations = usageRecord.iterations;
   if (!Array.isArray(iterations)) {
     return null;
   }
@@ -102,9 +105,11 @@ export const mapIterations = (
 };
 
 export const mapMetadata = (resultMessage: ResultMessageLike): AnthropicMessageMetadata => {
+  const usageRecord = isRecord(resultMessage.usage) ? resultMessage.usage : {};
+
   return {
     usage: {},
-    cacheCreationInputTokens: resultMessage.usage.cache_creation_input_tokens,
+    cacheCreationInputTokens: readNumber(usageRecord, "cache_creation_input_tokens") ?? 0,
     stopSequence: null,
     iterations: mapIterations(resultMessage),
     container: null,
