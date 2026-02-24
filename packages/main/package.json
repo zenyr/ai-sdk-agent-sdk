@@ -30,7 +30,8 @@
     "bun.ts",
     "internal/anthropic-option-warnings.ts",
     "README.md",
-    "CHANGELOG.md"
+    "CHANGELOG.md",
+    "LICENSE"
   ],
   "scripts": {
     "build": "rm -rf ./dist && bun build ./index.ts ./v2.ts --target=node --format=esm --outdir ./dist --external @ai-sdk/anthropic --external @ai-sdk/provider --external @ai-sdk/provider-utils --external @anthropic-ai/claude-agent-sdk",
@@ -63,6 +64,7 @@
     "multimodal",
     "vision"
   ],
+  "license": "MIT",
   "type": "module",
   "private": false,
   "dependencies": {
