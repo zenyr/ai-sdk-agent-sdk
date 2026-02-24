@@ -1,5 +1,11 @@
 # ai-sdk-agent-sdk
 
+## 0.0.4
+
+### Patch Changes
+
+- 9241d53: fix: accept any providerOptions namespace
+
 ## 0.0.3
 
 ### Patch Changes
