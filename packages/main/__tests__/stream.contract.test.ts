@@ -1,7 +1,20 @@
-import { afterEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+
+const originalOpenCode = process.env.OPENCODE;
+
+beforeEach(() => {
+  delete process.env.OPENCODE;
+});
 
 afterEach(() => {
   mock.restore();
+
+  if (originalOpenCode === undefined) {
+    delete process.env.OPENCODE;
+    return;
+  }
+
+  process.env.OPENCODE = originalOpenCode;
 });
 
 const buildMockResultUsage = () => {

@@ -1,10 +1,23 @@
-import { afterEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+const originalOpenCode = process.env.OPENCODE;
+
+beforeEach(() => {
+  delete process.env.OPENCODE;
+});
+
 afterEach(() => {
   mock.restore();
+
+  if (originalOpenCode === undefined) {
+    delete process.env.OPENCODE;
+    return;
+  }
+
+  process.env.OPENCODE = originalOpenCode;
 });
 
 const buildMockResultUsage = () => {
@@ -1904,7 +1917,7 @@ describe("provider settings contract", () => {
       headers: {
         "x-test-header": "enabled",
       },
-      fetch: async (input: RequestInfo | URL, init?: RequestInit) => {
+      fetch: async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
         return fetch(input, init);
       },
     });
@@ -1931,7 +1944,7 @@ describe("provider settings contract", () => {
         const feature = warning.feature;
         return typeof feature === "string" ? feature : undefined;
       })
-      .filter((feature): feature is string => {
+      .filter((feature: unknown): feature is string => {
         return typeof feature === "string";
       });
 
