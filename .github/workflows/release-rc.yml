@@ -39,7 +39,7 @@ jobs:
         uses: changesets/action@v1
         with:
           publish: bun run release
-          title: "chore: version packages (rc)"
-          commit: "chore: version packages (rc)"
+          title: "chore: version packages"
+          commit: "chore: version packages"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
