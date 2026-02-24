@@ -10,7 +10,6 @@ import type {
   LanguageModelV3StreamResult,
   SharedV3Warning,
 } from "@ai-sdk/provider";
-import { withoutTrailingSlash } from "@ai-sdk/provider-utils";
 import type {
   Options as AgentQueryOptions,
   SDKAssistantMessage,
@@ -31,14 +30,7 @@ import {
   parseStructuredEnvelopeFromText,
   parseStructuredEnvelopeFromUnknown,
 } from "../bridge/parse-utils";
-import {
-  extractSystemPromptFromMessages,
-  joinSerializedPromptMessages,
-  serializeMessage,
-  serializePromptMessages,
-  serializePromptMessagesForResumeQuery,
-  serializePromptMessagesWithoutSystem,
-} from "../bridge/prompt-serializer";
+import { extractSystemPromptFromMessages } from "../bridge/prompt-serializer";
 import { buildProviderMetadata, mapFinishReason, mapUsage } from "../bridge/result-mapping";
 import {
   appendStreamPartsFromRawEvent,
@@ -54,7 +46,19 @@ import {
 } from "../shared/stream-types";
 import type { ToolExecutorMap } from "../shared/tool-executor";
 import { isRecord, readRecord, readString, safeJsonStringify } from "../shared/type-readers";
+import {
+  buildIncomingSessionState,
+  buildPromptQueryInputWithIncomingSession,
+  findIncomingSessionState,
+  mergeIncomingSessionState,
+  readSessionIdFromQueryMessages,
+} from "./domain/incoming-session-state";
+import { buildMultimodalQueryPrompt } from "./domain/multimodal-prompt";
+import { mergePromptSessionState, type PromptSessionState } from "./domain/prompt-session-state";
+import { buildQueryEnv } from "./domain/query-env";
+import { readIncomingSessionKey } from "./domain/session-key";
 import { type IncomingSessionState, incomingSessionStore } from "./incoming-session-store";
+import type { IncomingSessionStorePort } from "./ports/incoming-session-store-port";
 
 const isAssistantMessage = (message: SDKMessage): message is SDKAssistantMessage => {
   return message.type === "assistant";
@@ -125,403 +129,7 @@ type ToolBridgeConfig = {
   missingExecutorToolNames: string[];
 };
 
-type PromptSessionState = {
-  sessionId: string;
-  serializedPromptMessages: string[];
-};
-
-type PromptQueryInput = {
-  prompt: string;
-  serializedPromptMessages?: string[];
-  resumeSessionId?: string;
-};
-
-type PromptQueryBuildResult = {
-  promptQueryInput: PromptQueryInput;
-};
-
 type QueryPromptInput = string | AsyncIterable<SDKUserMessage>;
-
-type AgentUserTextContentBlock = {
-  type: "text";
-  text: string;
-};
-
-type AgentUserImageContentBlock = {
-  type: "image";
-  source: {
-    type: "base64";
-    media_type: string;
-    data: string;
-  };
-};
-
-type AgentUserContentBlock = AgentUserTextContentBlock | AgentUserImageContentBlock;
-
-const MAX_PROMPT_SESSION_STATES = 20;
-const MAX_INCOMING_SESSION_STATES = 100;
-const CONVERSATION_ID_HEADER = "x-conversation-id";
-const LEGACY_OPENCODE_SESSION_HEADER = "x-opencode-session";
-const CONVERSATION_ID_CANDIDATE_KEYS = ["conversationId", "conversationID", "conversation_id"];
-const LEGACY_INCOMING_SESSION_CANDIDATE_KEYS = [
-  "sessionId",
-  "sessionID",
-  "session_id",
-  "promptCacheKey",
-  "prompt_cache_key",
-  "opencodeSession",
-  "opencode_session",
-];
-const CANONICAL_PROVIDER_OPTIONS_NAMESPACES = ["agentSdk", "agent_sdk", "agent-sdk"];
-const LEGACY_PROVIDER_OPTIONS_NAMESPACES = ["opencode", "anthropic"];
-
-const normalizeMediaType = (mediaType: string | undefined): string | undefined => {
-  if (mediaType === undefined) {
-    return undefined;
-  }
-
-  const normalizedMediaType = mediaType.split(";")[0]?.trim().toLowerCase();
-  if (normalizedMediaType === undefined || normalizedMediaType.length === 0) {
-    return undefined;
-  }
-
-  return normalizedMediaType;
-};
-
-const isImageMediaType = (mediaType: string | undefined): boolean => {
-  return typeof mediaType === "string" && mediaType.startsWith("image/");
-};
-
-const readMessageContentParts = (message: LanguageModelV3Message): unknown[] => {
-  if (message.role === "system") {
-    return [];
-  }
-
-  const messageContent: unknown = message.content;
-
-  if (typeof messageContent === "string") {
-    if (messageContent.length === 0) {
-      return [];
-    }
-
-    return [
-      {
-        type: "text",
-        text: messageContent,
-      },
-    ];
-  }
-
-  if (!Array.isArray(messageContent)) {
-    return [];
-  }
-
-  return messageContent;
-};
-
-const findLastUserMessageIndex = (promptMessages: LanguageModelV3Message[]): number | undefined => {
-  for (let index = promptMessages.length - 1; index >= 0; index -= 1) {
-    const promptMessage = promptMessages[index];
-    if (promptMessage?.role === "user") {
-      return index;
-    }
-  }
-
-  return undefined;
-};
-
-const hasImagePart = (contentParts: unknown[]): boolean => {
-  for (const contentPart of contentParts) {
-    if (!isRecord(contentPart)) {
-      continue;
-    }
-
-    const contentPartType = readString(contentPart, "type");
-    if (contentPartType === "image") {
-      return true;
-    }
-
-    if (contentPartType !== "file") {
-      continue;
-    }
-
-    const mediaType = normalizeMediaType(
-      readString(contentPart, "mediaType") ?? readString(contentPart, "mimeType"),
-    );
-    if (isImageMediaType(mediaType)) {
-      return true;
-    }
-  }
-
-  return false;
-};
-
-const readImageDataUrl = (value: string): { mediaType: string; data: string } | undefined => {
-  if (!value.startsWith("data:")) {
-    return undefined;
-  }
-
-  const metadataEndIndex = value.indexOf(",");
-  if (metadataEndIndex <= 5) {
-    return undefined;
-  }
-
-  const metadata = value.slice(5, metadataEndIndex);
-  const data = value.slice(metadataEndIndex + 1);
-  if (!metadata.toLowerCase().includes(";base64") || data.length === 0) {
-    return undefined;
-  }
-
-  const mediaType = normalizeMediaType(metadata.split(";")[0]);
-  if (mediaType === undefined || !isImageMediaType(mediaType)) {
-    return undefined;
-  }
-
-  return {
-    mediaType,
-    data,
-  };
-};
-
-const readHttpUrl = (value: string): URL | undefined => {
-  try {
-    const url = new URL(value);
-    if (url.protocol !== "http:" && url.protocol !== "https:") {
-      return undefined;
-    }
-
-    return url;
-  } catch {
-    return undefined;
-  }
-};
-
-const readBinaryDataAsUint8Array = (value: unknown): Uint8Array | undefined => {
-  if (value instanceof Uint8Array) {
-    return value;
-  }
-
-  if (value instanceof ArrayBuffer) {
-    return new Uint8Array(value);
-  }
-
-  if (ArrayBuffer.isView(value)) {
-    return new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
-  }
-
-  return undefined;
-};
-
-const readImageDataFromUrl = async (
-  url: URL,
-): Promise<{ mediaType: string | undefined; data: string }> => {
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`failed to download image attachment: ${url.toString()}`);
-  }
-
-  const responseMediaType = normalizeMediaType(response.headers.get("content-type") ?? undefined);
-  if (responseMediaType !== undefined && !isImageMediaType(responseMediaType)) {
-    throw new Error(`unsupported image media type from URL: ${responseMediaType}`);
-  }
-
-  const responseBytes = new Uint8Array(await response.arrayBuffer());
-
-  return {
-    mediaType: responseMediaType,
-    data: Buffer.from(responseBytes).toString("base64"),
-  };
-};
-
-const normalizeImageAttachment = async (args: {
-  data: unknown;
-  mediaTypeHint: string | undefined;
-}): Promise<{ mediaType: string; data: string }> => {
-  const normalizedMediaTypeHint = normalizeMediaType(args.mediaTypeHint);
-  if (normalizedMediaTypeHint !== undefined && !isImageMediaType(normalizedMediaTypeHint)) {
-    throw new Error(`unsupported image media type: ${normalizedMediaTypeHint}`);
-  }
-
-  if (args.data instanceof URL) {
-    const downloadedImage = await readImageDataFromUrl(args.data);
-    const mediaType = downloadedImage.mediaType ?? normalizedMediaTypeHint;
-    if (mediaType === undefined || !isImageMediaType(mediaType)) {
-      throw new Error("missing media type for image URL attachment");
-    }
-
-    return {
-      mediaType,
-      data: downloadedImage.data,
-    };
-  }
-
-  if (typeof args.data === "string") {
-    const parsedDataUrl = readImageDataUrl(args.data);
-    if (parsedDataUrl !== undefined) {
-      return parsedDataUrl;
-    }
-
-    const imageUrl = readHttpUrl(args.data);
-    if (imageUrl !== undefined) {
-      const downloadedImage = await readImageDataFromUrl(imageUrl);
-      const mediaType = downloadedImage.mediaType ?? normalizedMediaTypeHint;
-      if (mediaType === undefined || !isImageMediaType(mediaType)) {
-        throw new Error("missing media type for image URL attachment");
-      }
-
-      return {
-        mediaType,
-        data: downloadedImage.data,
-      };
-    }
-
-    if (normalizedMediaTypeHint === undefined || !isImageMediaType(normalizedMediaTypeHint)) {
-      throw new Error("missing media type for image base64 attachment");
-    }
-
-    return {
-      mediaType: normalizedMediaTypeHint,
-      data: args.data,
-    };
-  }
-
-  const binaryData = readBinaryDataAsUint8Array(args.data);
-  if (binaryData === undefined) {
-    throw new Error("unsupported image attachment data type");
-  }
-
-  if (normalizedMediaTypeHint === undefined || !isImageMediaType(normalizedMediaTypeHint)) {
-    throw new Error("missing media type for image binary attachment");
-  }
-
-  return {
-    mediaType: normalizedMediaTypeHint,
-    data: Buffer.from(binaryData).toString("base64"),
-  };
-};
-
-const mapContentPartToMultimodalBlocks = async (
-  contentPart: unknown,
-): Promise<AgentUserContentBlock[]> => {
-  if (!isRecord(contentPart)) {
-    return [];
-  }
-
-  const contentPartType = readString(contentPart, "type");
-  if (contentPartType === "text") {
-    const text = readString(contentPart, "text") ?? "";
-    if (text.length === 0) {
-      return [];
-    }
-
-    return [{ type: "text", text }];
-  }
-
-  if (contentPartType !== "image" && contentPartType !== "file") {
-    return [];
-  }
-
-  const mediaTypeHint = readString(contentPart, "mediaType") ?? readString(contentPart, "mimeType");
-  if (contentPartType === "file" && !isImageMediaType(normalizeMediaType(mediaTypeHint))) {
-    return [];
-  }
-
-  const imageData = contentPartType === "image" ? contentPart.image : contentPart.data;
-  const normalizedImageAttachment = await normalizeImageAttachment({
-    data: imageData,
-    mediaTypeHint,
-  });
-
-  return [
-    {
-      type: "image",
-      source: {
-        type: "base64",
-        media_type: normalizedImageAttachment.mediaType,
-        data: normalizedImageAttachment.data,
-      },
-    },
-  ];
-};
-
-const createSingleUserMessagePrompt = (
-  userMessage: SDKUserMessage,
-): AsyncIterable<SDKUserMessage> => {
-  const promptStream = {
-    async *[Symbol.asyncIterator]() {
-      yield userMessage;
-    },
-  };
-
-  return promptStream;
-};
-
-const buildMultimodalQueryPrompt = async (args: {
-  promptMessages: LanguageModelV3Message[];
-  resumeSessionId: string | undefined;
-  preambleText: string | undefined;
-}): Promise<AsyncIterable<SDKUserMessage> | undefined> => {
-  const lastUserMessageIndex = findLastUserMessageIndex(args.promptMessages);
-  if (lastUserMessageIndex === undefined) {
-    return undefined;
-  }
-
-  const lastUserMessage = args.promptMessages[lastUserMessageIndex];
-  if (lastUserMessage === undefined) {
-    return undefined;
-  }
-
-  const lastUserMessageContentParts = readMessageContentParts(lastUserMessage);
-  if (!hasImagePart(lastUserMessageContentParts)) {
-    return undefined;
-  }
-
-  const contentBlocks: AgentUserContentBlock[] = [];
-
-  if (args.preambleText !== undefined && args.preambleText.length > 0) {
-    contentBlocks.push({
-      type: "text",
-      text: args.preambleText,
-    });
-  }
-
-  if (args.resumeSessionId === undefined) {
-    const previousPromptMessages = args.promptMessages.slice(0, lastUserMessageIndex);
-    const serializedPreviousPromptMessages =
-      serializePromptMessagesWithoutSystem(previousPromptMessages);
-    const previousPromptText = joinSerializedPromptMessages(serializedPreviousPromptMessages);
-
-    if (previousPromptText.length > 0) {
-      contentBlocks.push({
-        type: "text",
-        text: `Previous conversation context:\n\n${previousPromptText}`,
-      });
-    }
-  }
-
-  for (const contentPart of lastUserMessageContentParts) {
-    const mappedContentBlocks = await mapContentPartToMultimodalBlocks(contentPart);
-    for (const mappedContentBlock of mappedContentBlocks) {
-      contentBlocks.push(mappedContentBlock);
-    }
-  }
-
-  if (contentBlocks.length === 0) {
-    return undefined;
-  }
-
-  const userMessage: SDKUserMessage = {
-    type: "user",
-    session_id: args.resumeSessionId ?? "default",
-    parent_tool_use_id: null,
-    message: {
-      role: "user",
-      content: contentBlocks,
-    },
-  };
-
-  return createSingleUserMessagePrompt(userMessage);
-};
 
 const toBridgeToolName = (toolName: string): string => {
   return `${TOOL_BRIDGE_NAME_PREFIX}${toolName}`;
@@ -552,513 +160,6 @@ const normalizeToolInputJson = (value: string): string => {
   } catch {
     return trimmedValue;
   }
-};
-
-const hasSerializedPromptPrefix = (prefix: string[], target: string[]): boolean => {
-  if (prefix.length > target.length) {
-    return false;
-  }
-
-  for (let index = 0; index < prefix.length; index += 1) {
-    if (prefix[index] !== target[index]) {
-      return false;
-    }
-  }
-
-  return true;
-};
-
-const hasIdenticalSerializedPrompt = (source: string[], target: string[]): boolean => {
-  if (source.length !== target.length) {
-    return false;
-  }
-
-  for (let index = 0; index < source.length; index += 1) {
-    if (source[index] !== target[index]) {
-      return false;
-    }
-  }
-
-  return true;
-};
-
-const findBestPromptSessionState = (args: {
-  serializedPromptMessages: string[];
-  previousSessionStates: PromptSessionState[];
-}): PromptSessionState | undefined => {
-  let bestState: PromptSessionState | undefined;
-
-  for (const sessionState of args.previousSessionStates) {
-    if (
-      !hasSerializedPromptPrefix(
-        sessionState.serializedPromptMessages,
-        args.serializedPromptMessages,
-      )
-    ) {
-      continue;
-    }
-
-    if (
-      bestState === undefined ||
-      sessionState.serializedPromptMessages.length > bestState.serializedPromptMessages.length
-    ) {
-      bestState = sessionState;
-    }
-  }
-
-  return bestState;
-};
-
-const mergePromptSessionState = (args: {
-  previousSessionStates: PromptSessionState[];
-  nextSessionState: PromptSessionState;
-}): PromptSessionState[] => {
-  const dedupedStates = args.previousSessionStates.filter((sessionState) => {
-    if (sessionState.sessionId === args.nextSessionState.sessionId) {
-      return false;
-    }
-
-    return !hasIdenticalSerializedPrompt(
-      sessionState.serializedPromptMessages,
-      args.nextSessionState.serializedPromptMessages,
-    );
-  });
-
-  return [args.nextSessionState, ...dedupedStates].slice(0, MAX_PROMPT_SESSION_STATES);
-};
-
-const buildPromptQueryInput = (args: {
-  promptMessages: LanguageModelV3Message[];
-  previousSessionStates: PromptSessionState[];
-}): PromptQueryInput => {
-  const serializedPromptMessages = serializePromptMessages(args.promptMessages);
-  const serializedPromptMessagesForQuery = serializePromptMessagesWithoutSystem(
-    args.promptMessages,
-  );
-  const fullPrompt = joinSerializedPromptMessages(serializedPromptMessagesForQuery);
-  const previousSessionState = findBestPromptSessionState({
-    serializedPromptMessages,
-    previousSessionStates: args.previousSessionStates,
-  });
-
-  if (previousSessionState === undefined) {
-    return {
-      prompt: fullPrompt,
-      serializedPromptMessages,
-    };
-  }
-
-  const previousPromptMessages = previousSessionState.serializedPromptMessages;
-  if (!hasSerializedPromptPrefix(previousPromptMessages, serializedPromptMessages)) {
-    return {
-      prompt: fullPrompt,
-      serializedPromptMessages,
-    };
-  }
-
-  const appendedPromptMessages = serializedPromptMessages.slice(previousPromptMessages.length);
-  if (appendedPromptMessages.length === 0) {
-    return {
-      prompt: fullPrompt,
-      serializedPromptMessages,
-    };
-  }
-
-  const appendedSourceMessages = args.promptMessages.slice(previousPromptMessages.length);
-  const appendedPromptMessagesForQuery =
-    serializePromptMessagesForResumeQuery(appendedSourceMessages);
-
-  if (appendedPromptMessagesForQuery.length === 0) {
-    const fallbackAppendedPromptMessages =
-      serializePromptMessagesWithoutSystem(appendedSourceMessages);
-
-    if (fallbackAppendedPromptMessages.length === 0) {
-      return {
-        prompt: fullPrompt,
-        serializedPromptMessages,
-      };
-    }
-
-    return {
-      prompt: joinSerializedPromptMessages(fallbackAppendedPromptMessages),
-      serializedPromptMessages,
-      resumeSessionId: previousSessionState.sessionId,
-    };
-  }
-
-  return {
-    prompt: joinSerializedPromptMessages(appendedPromptMessagesForQuery),
-    serializedPromptMessages,
-    resumeSessionId: previousSessionState.sessionId,
-  };
-};
-
-const buildPromptQueryInputWithoutResume = (
-  promptMessages: LanguageModelV3Message[],
-): PromptQueryInput => {
-  const serializedPromptMessagesForQuery = serializePromptMessagesWithoutSystem(promptMessages);
-
-  return {
-    prompt: joinSerializedPromptMessages(serializedPromptMessagesForQuery),
-  };
-};
-
-const buildResumePromptQueryInput = (args: {
-  promptMessages: LanguageModelV3Message[];
-  resumeSessionId: string;
-}): PromptQueryInput | undefined => {
-  const appendedPromptMessagesForQuery = serializePromptMessagesForResumeQuery(args.promptMessages);
-
-  if (appendedPromptMessagesForQuery.length > 0) {
-    return {
-      prompt: joinSerializedPromptMessages(appendedPromptMessagesForQuery),
-      resumeSessionId: args.resumeSessionId,
-    };
-  }
-
-  const fallbackPromptMessages = serializePromptMessagesWithoutSystem(args.promptMessages);
-  if (fallbackPromptMessages.length === 0) {
-    return undefined;
-  }
-
-  return {
-    prompt: joinSerializedPromptMessages(fallbackPromptMessages),
-    resumeSessionId: args.resumeSessionId,
-  };
-};
-
-const readPromptMessageSignature = (
-  message: LanguageModelV3Message | undefined,
-): string | undefined => {
-  if (message === undefined) {
-    return undefined;
-  }
-
-  const signature = serializeMessage(message);
-  if (signature.length === 0) {
-    return undefined;
-  }
-
-  return signature;
-};
-
-const readFirstNonEmptyString = (
-  source: Record<string, unknown> | undefined,
-  keys: string[],
-): string | undefined => {
-  if (source === undefined) {
-    return undefined;
-  }
-
-  for (const key of keys) {
-    const value = readNonEmptyString(source[key]);
-    if (value !== undefined) {
-      return value;
-    }
-  }
-
-  return undefined;
-};
-
-const readIncomingSessionKeyFromRecord = (
-  source: Record<string, unknown> | undefined,
-): string | undefined => {
-  if (source === undefined) {
-    return undefined;
-  }
-
-  return (
-    readFirstNonEmptyString(source, CONVERSATION_ID_CANDIDATE_KEYS) ??
-    readFirstNonEmptyString(source, LEGACY_INCOMING_SESSION_CANDIDATE_KEYS)
-  );
-};
-
-const readCaseInsensitiveHeader = (headers: unknown, headerName: string): string | undefined => {
-  if (!isRecord(headers)) {
-    return undefined;
-  }
-
-  const directHeaderValue = readNonEmptyString(headers[headerName]);
-  if (directHeaderValue !== undefined) {
-    return directHeaderValue;
-  }
-
-  const headerGetter = headers.get;
-  if (typeof headerGetter === "function") {
-    try {
-      const valueFromGetter = readNonEmptyString(headerGetter.call(headers, headerName));
-      if (valueFromGetter !== undefined) {
-        return valueFromGetter;
-      }
-    } catch {}
-  }
-
-  const normalizedHeaderName = headerName.toLowerCase();
-  for (const [rawHeaderName, rawHeaderValue] of Object.entries(headers)) {
-    if (rawHeaderName.toLowerCase() !== normalizedHeaderName) {
-      continue;
-    }
-
-    const normalizedHeaderValue = readNonEmptyString(rawHeaderValue);
-    if (normalizedHeaderValue !== undefined) {
-      return normalizedHeaderValue;
-    }
-  }
-
-  return undefined;
-};
-
-const readIncomingSessionKeyFromHeaders = (
-  optionsRecord: Record<string, unknown>,
-): string | undefined => {
-  return (
-    readCaseInsensitiveHeader(optionsRecord.headers, CONVERSATION_ID_HEADER) ??
-    readCaseInsensitiveHeader(optionsRecord.headers, LEGACY_OPENCODE_SESSION_HEADER)
-  );
-};
-
-const readIncomingSessionKeyFromTelemetry = (
-  optionsRecord: Record<string, unknown>,
-): string | undefined => {
-  const telemetry = readRecord(optionsRecord, "experimental_telemetry");
-  if (telemetry === undefined) {
-    return undefined;
-  }
-
-  const metadata = readRecord(telemetry, "metadata");
-  if (metadata === undefined) {
-    return undefined;
-  }
-
-  return readIncomingSessionKeyFromRecord(metadata);
-};
-
-const readIncomingSessionKeyFromProviderOptions = (
-  optionsRecord: Record<string, unknown>,
-): string | undefined => {
-  const providerOptions = readRecord(optionsRecord, "providerOptions");
-  if (providerOptions === undefined) {
-    return undefined;
-  }
-
-  for (const namespace of CANONICAL_PROVIDER_OPTIONS_NAMESPACES) {
-    const canonicalOptions = readRecord(providerOptions, namespace);
-    if (canonicalOptions === undefined) {
-      continue;
-    }
-
-    const canonicalConversationId = readIncomingSessionKeyFromRecord(canonicalOptions);
-    if (canonicalConversationId !== undefined) {
-      return canonicalConversationId;
-    }
-  }
-
-  for (const namespace of LEGACY_PROVIDER_OPTIONS_NAMESPACES) {
-    const legacyOptions = readRecord(providerOptions, namespace);
-    if (legacyOptions === undefined) {
-      continue;
-    }
-
-    const legacyConversationId = readIncomingSessionKeyFromRecord(legacyOptions);
-    if (legacyConversationId !== undefined) {
-      return legacyConversationId;
-    }
-  }
-
-  const knownNamespaces = new Set<string>([
-    ...CANONICAL_PROVIDER_OPTIONS_NAMESPACES,
-    ...LEGACY_PROVIDER_OPTIONS_NAMESPACES,
-  ]);
-
-  for (const [namespace, value] of Object.entries(providerOptions)) {
-    if (knownNamespaces.has(namespace)) {
-      continue;
-    }
-
-    const namespaceOptions = isRecord(value) ? value : undefined;
-    if (namespaceOptions === undefined) {
-      continue;
-    }
-
-    const discoveredSessionKey = readIncomingSessionKeyFromRecord(namespaceOptions);
-    if (discoveredSessionKey !== undefined) {
-      return discoveredSessionKey;
-    }
-  }
-
-  return readIncomingSessionKeyFromRecord(providerOptions);
-};
-
-const readIncomingSessionKey = (options: LanguageModelV3CallOptions): string | undefined => {
-  if (!isRecord(options)) {
-    return undefined;
-  }
-
-  return (
-    readIncomingSessionKeyFromHeaders(options) ??
-    readIncomingSessionKeyFromTelemetry(options) ??
-    readIncomingSessionKeyFromProviderOptions(options)
-  );
-};
-
-const findIncomingSessionState = (args: {
-  incomingSessionKey: string;
-  previousIncomingSessionStates: IncomingSessionState[];
-}): IncomingSessionState | undefined => {
-  return args.previousIncomingSessionStates.find((incomingSessionState) => {
-    return incomingSessionState.incomingSessionKey === args.incomingSessionKey;
-  });
-};
-
-const mergeIncomingSessionState = (args: {
-  previousIncomingSessionStates: IncomingSessionState[];
-  nextIncomingSessionState: IncomingSessionState;
-}): IncomingSessionState[] => {
-  const dedupedStates = args.previousIncomingSessionStates.filter((incomingSessionState) => {
-    return (
-      incomingSessionState.incomingSessionKey !== args.nextIncomingSessionState.incomingSessionKey
-    );
-  });
-
-  return [args.nextIncomingSessionState, ...dedupedStates].slice(0, MAX_INCOMING_SESSION_STATES);
-};
-
-const buildIncomingSessionState = (args: {
-  incomingSessionKey: string;
-  sessionId: string;
-  promptMessages: LanguageModelV3Message[];
-}): IncomingSessionState => {
-  const promptMessageCount = args.promptMessages.length;
-  const firstPromptMessageSignature = readPromptMessageSignature(args.promptMessages[0]);
-  const lastPromptMessageSignature = readPromptMessageSignature(
-    args.promptMessages[promptMessageCount - 1],
-  );
-
-  return {
-    incomingSessionKey: args.incomingSessionKey,
-    sessionId: args.sessionId,
-    promptMessageCount,
-    firstPromptMessageSignature,
-    lastPromptMessageSignature,
-  };
-};
-
-const isSingleUserPrompt = (promptMessages: LanguageModelV3Message[]): boolean => {
-  if (promptMessages.length !== 1) {
-    return false;
-  }
-
-  const firstPromptMessage = promptMessages[0];
-  return firstPromptMessage !== undefined && firstPromptMessage.role === "user";
-};
-
-const buildPromptQueryInputFromIncomingSession = (args: {
-  incomingSessionState: IncomingSessionState;
-  promptMessages: LanguageModelV3Message[];
-}): PromptQueryInput | undefined => {
-  const previousPromptMessageCount = args.incomingSessionState.promptMessageCount;
-  const { promptMessages } = args;
-
-  if (promptMessages.length > previousPromptMessageCount) {
-    if (previousPromptMessageCount > 0) {
-      const firstPromptMessageSignature = readPromptMessageSignature(promptMessages[0]);
-      if (
-        args.incomingSessionState.firstPromptMessageSignature !== undefined &&
-        firstPromptMessageSignature !== args.incomingSessionState.firstPromptMessageSignature
-      ) {
-        return undefined;
-      }
-
-      const previousLastPromptMessage = promptMessages[previousPromptMessageCount - 1];
-      const previousLastPromptMessageSignature =
-        readPromptMessageSignature(previousLastPromptMessage);
-      if (
-        args.incomingSessionState.lastPromptMessageSignature !== undefined &&
-        previousLastPromptMessageSignature !== args.incomingSessionState.lastPromptMessageSignature
-      ) {
-        return undefined;
-      }
-    }
-
-    return buildResumePromptQueryInput({
-      promptMessages: promptMessages.slice(previousPromptMessageCount),
-      resumeSessionId: args.incomingSessionState.sessionId,
-    });
-  }
-
-  if (!isSingleUserPrompt(promptMessages)) {
-    return undefined;
-  }
-
-  return buildResumePromptQueryInput({
-    promptMessages,
-    resumeSessionId: args.incomingSessionState.sessionId,
-  });
-};
-
-const buildPromptQueryInputWithIncomingSession = (args: {
-  options: LanguageModelV3CallOptions;
-  incomingSessionKey: string | undefined;
-  previousSessionStates: PromptSessionState[];
-  previousIncomingSessionStates: IncomingSessionState[];
-}): PromptQueryBuildResult => {
-  const { incomingSessionKey } = args;
-
-  if (incomingSessionKey === undefined) {
-    return {
-      promptQueryInput: buildPromptQueryInput({
-        promptMessages: args.options.prompt,
-        previousSessionStates: args.previousSessionStates,
-      }),
-    };
-  }
-
-  const incomingSessionState = findIncomingSessionState({
-    incomingSessionKey,
-    previousIncomingSessionStates: args.previousIncomingSessionStates,
-  });
-
-  if (incomingSessionState === undefined) {
-    return {
-      promptQueryInput: buildPromptQueryInputWithoutResume(args.options.prompt),
-    };
-  }
-
-  const promptQueryInputFromIncomingSession = buildPromptQueryInputFromIncomingSession({
-    incomingSessionState,
-    promptMessages: args.options.prompt,
-  });
-
-  if (promptQueryInputFromIncomingSession !== undefined) {
-    return {
-      promptQueryInput: promptQueryInputFromIncomingSession,
-    };
-  }
-
-  return {
-    promptQueryInput: buildPromptQueryInput({
-      promptMessages: args.options.prompt,
-      previousSessionStates: args.previousSessionStates,
-    }),
-  };
-};
-
-const readSessionIdFromQueryMessages = (args: {
-  resultMessage: SDKResultMessage | undefined;
-  assistantMessage: SDKAssistantMessage | undefined;
-}): string | undefined => {
-  if (isRecord(args.resultMessage)) {
-    const sessionIdFromResult = readString(args.resultMessage, "session_id");
-    if (sessionIdFromResult !== undefined) {
-      return sessionIdFromResult;
-    }
-  }
-
-  if (!isRecord(args.assistantMessage)) {
-    return undefined;
-  }
-
-  return readString(args.assistantMessage, "session_id");
 };
 
 const buildToolBridgeConfig = (
@@ -1274,32 +375,6 @@ const recoverToolModeContentFromAssistantText = (
   return [{ type: "text", text: assistantText }];
 };
 
-const buildQueryEnv = (settings: AnthropicProviderSettings): Record<string, string | undefined> => {
-  const env: Record<string, string | undefined> = {
-    ...process.env,
-  };
-
-  const apiKey = readNonEmptyString(settings.apiKey);
-  if (apiKey !== undefined) {
-    env.ANTHROPIC_API_KEY = apiKey;
-  }
-
-  const authToken = readNonEmptyString(settings.authToken);
-  if (authToken !== undefined) {
-    env.ANTHROPIC_AUTH_TOKEN = authToken;
-  }
-
-  const baseURL = readNonEmptyString(settings.baseURL);
-  if (baseURL !== undefined) {
-    const normalizedBaseURL = withoutTrailingSlash(baseURL);
-    if (normalizedBaseURL !== undefined) {
-      env.ANTHROPIC_BASE_URL = normalizedBaseURL;
-    }
-  }
-
-  return env;
-};
-
 const collectProviderSettingWarnings = (settings: AnthropicProviderSettings): SharedV3Warning[] => {
   const warnings: SharedV3Warning[] = [];
 
@@ -1343,6 +418,7 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
   private readonly idGenerator: () => string;
   private readonly toolExecutors: ToolExecutorMap | undefined;
   private readonly maxTurns: number | undefined;
+  private readonly sessionStore: IncomingSessionStorePort;
   private readonly providerSettingWarnings: SharedV3Warning[];
   private promptSessionStates: PromptSessionState[] = [];
   private incomingSessionStates: IncomingSessionState[] = [];
@@ -1354,6 +430,7 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
     idGenerator: () => string;
     toolExecutors?: ToolExecutorMap;
     maxTurns?: number;
+    sessionStore?: IncomingSessionStorePort;
   }) {
     this.modelId = args.modelId;
     this.provider = args.provider;
@@ -1361,6 +438,7 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
     this.idGenerator = args.idGenerator;
     this.toolExecutors = args.toolExecutors;
     this.maxTurns = args.maxTurns;
+    this.sessionStore = args.sessionStore ?? incomingSessionStore;
     this.providerSettingWarnings = collectProviderSettingWarnings(this.settings);
     this.supportedUrls = DEFAULT_SUPPORTED_URLS;
   }
@@ -1375,7 +453,7 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
       return;
     }
 
-    const persistedIncomingSessionState = await incomingSessionStore
+    const persistedIncomingSessionState = await this.sessionStore
       .get({
         modelId: this.modelId,
         incomingSessionKey,
@@ -1402,7 +480,7 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
       nextIncomingSessionState: incomingSessionState,
     });
 
-    await incomingSessionStore
+    await this.sessionStore
       .set({
         modelId: this.modelId,
         incomingSessionKey: incomingSessionState.incomingSessionKey,
@@ -1423,8 +501,8 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
       await this.hydrateIncomingSessionState(incomingSessionKey);
     }
 
-    const { promptQueryInput } = buildPromptQueryInputWithIncomingSession({
-      options,
+    const promptQueryInput = buildPromptQueryInputWithIncomingSession({
+      promptMessages: options.prompt,
       incomingSessionKey,
       previousSessionStates: this.promptSessionStates,
       previousIncomingSessionStates: this.incomingSessionStates,
@@ -1734,7 +812,7 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
         content = [
           {
             type: "text",
-            text: errorText.length > 0 ? errorText : finalResultMessage.result,
+            text: errorText,
           },
         ];
         finishReason = {
@@ -1969,8 +1047,8 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
       await this.hydrateIncomingSessionState(incomingSessionKey);
     }
 
-    const { promptQueryInput } = buildPromptQueryInputWithIncomingSession({
-      options,
+    const promptQueryInput = buildPromptQueryInputWithIncomingSession({
+      promptMessages: options.prompt,
       incomingSessionKey,
       previousSessionStates: this.promptSessionStates,
       previousIncomingSessionStates: this.incomingSessionStates,
@@ -2262,7 +1340,17 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
               );
 
               for (const recoveredToolCall of recoveredToolCalls) {
-                controller.enqueue(recoveredToolCall);
+                if (recoveredToolCall.type !== "tool-call") {
+                  continue;
+                }
+
+                controller.enqueue({
+                  type: "tool-call",
+                  toolCallId: recoveredToolCall.toolCallId,
+                  toolName: recoveredToolCall.toolName,
+                  input: recoveredToolCall.input,
+                  providerExecuted: recoveredToolCall.providerExecuted,
+                });
               }
 
               if (recoveredToolCalls.length > 0) {
