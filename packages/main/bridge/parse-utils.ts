@@ -5,7 +5,6 @@ import type {
   LanguageModelV3ProviderTool,
   SharedV3Warning,
 } from "@ai-sdk/provider";
-import type { ThinkingConfig } from "@anthropic-ai/claude-agent-sdk";
 import { collectAnthropicProviderOptionWarnings } from "../internal/anthropic-option-warnings";
 import {
   isRecord,
@@ -18,7 +17,10 @@ import type { CompletionMode } from "./completion-mode";
 
 type ParsedAnthropicProviderOptions = {
   effort?: "low" | "medium" | "high" | "max";
-  thinking?: ThinkingConfig;
+  thinking?:
+    | { type: "adaptive" }
+    | { type: "disabled" }
+    | { type: "enabled"; budgetTokens?: number };
 };
 
 type StructuredToolCall = {
