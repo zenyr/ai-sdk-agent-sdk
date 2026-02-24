@@ -83,3 +83,7 @@ Add the following entry inside the `providers` object in `~/.config/opencode/ope
 
 The `npm` field tells opencode to load the provider from the installed package. Requires Claude Code to be authenticated.
 
+## Changelog
+
+[packages/main/CHANGELOG.md](./packages/main/CHANGELOG.md)
+
