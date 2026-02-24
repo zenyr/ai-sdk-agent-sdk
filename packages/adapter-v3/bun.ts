@@ -1,10 +1,3 @@
-export {
-  VERSION,
-  anthropic,
-  createAnthropic,
-  forwardAnthropicContainerIdFromLastStep,
-} from './index';
-
 export type {
   AnthropicLanguageModelOptions,
   AnthropicMessageMetadata,
@@ -13,4 +6,10 @@ export type {
   AnthropicProviderSettings,
   AnthropicToolOptions,
   AnthropicUsageIteration,
-} from './index';
+} from "./index";
+export {
+  anthropic,
+  createAnthropic,
+  forwardAnthropicContainerIdFromLastStep,
+  VERSION,
+} from "./index";

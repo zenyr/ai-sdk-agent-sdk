@@ -1,14 +1,5 @@
-type UpstreamAnthropic = typeof import('@ai-sdk/anthropic');
-type LocalAnthropic = typeof import('./index');
-
-import type {
-  AnthropicLanguageModelOptions as LocalAnthropicLanguageModelOptions,
-  AnthropicMessageMetadata as LocalAnthropicMessageMetadata,
-  AnthropicProvider as LocalAnthropicProvider,
-  AnthropicProviderSettings as LocalAnthropicProviderSettings,
-  AnthropicToolOptions as LocalAnthropicToolOptions,
-  AnthropicUsageIteration as LocalAnthropicUsageIteration,
-} from './index';
+type UpstreamAnthropic = typeof import("@ai-sdk/anthropic");
+type LocalAnthropic = typeof import("./index");
 
 import type {
   AnthropicLanguageModelOptions as UpstreamAnthropicLanguageModelOptions,
@@ -17,10 +8,18 @@ import type {
   AnthropicProviderSettings as UpstreamAnthropicProviderSettings,
   AnthropicToolOptions as UpstreamAnthropicToolOptions,
   AnthropicUsageIteration as UpstreamAnthropicUsageIteration,
-} from '@ai-sdk/anthropic';
+} from "@ai-sdk/anthropic";
+import type {
+  AnthropicLanguageModelOptions as LocalAnthropicLanguageModelOptions,
+  AnthropicMessageMetadata as LocalAnthropicMessageMetadata,
+  AnthropicProvider as LocalAnthropicProvider,
+  AnthropicProviderSettings as LocalAnthropicProviderSettings,
+  AnthropicToolOptions as LocalAnthropicToolOptions,
+  AnthropicUsageIteration as LocalAnthropicUsageIteration,
+} from "./index";
 
 type AssertNever<T extends never> = T;
-type AssertAssignable<From, To extends From> = true;
+type AssertAssignable<From, _To extends From> = true;
 
 type MissingInLocal = Exclude<keyof UpstreamAnthropic, keyof LocalAnthropic>;
 type MissingInUpstream = Exclude<keyof LocalAnthropic, keyof UpstreamAnthropic>;
@@ -28,17 +27,11 @@ type MissingInUpstream = Exclude<keyof LocalAnthropic, keyof UpstreamAnthropic>;
 type _assertNoMissingInLocal = AssertNever<MissingInLocal>;
 type _assertNoMissingInUpstream = AssertNever<MissingInUpstream>;
 
-declare const localProvider: ReturnType<LocalAnthropic['createAnthropic']>;
+declare const localProvider: ReturnType<LocalAnthropic["createAnthropic"]>;
 const _providerCompatibility: UpstreamAnthropicProvider = localProvider;
 
-type _providerTypeForward = AssertAssignable<
-  UpstreamAnthropicProvider,
-  LocalAnthropicProvider
->;
-type _providerTypeBackward = AssertAssignable<
-  LocalAnthropicProvider,
-  UpstreamAnthropicProvider
->;
+type _providerTypeForward = AssertAssignable<UpstreamAnthropicProvider, LocalAnthropicProvider>;
+type _providerTypeBackward = AssertAssignable<LocalAnthropicProvider, UpstreamAnthropicProvider>;
 
 type _providerSettingsForward = AssertAssignable<
   UpstreamAnthropicProviderSettings,

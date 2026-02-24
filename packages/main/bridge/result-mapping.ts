@@ -1,7 +1,4 @@
-import type {
-  AnthropicMessageMetadata,
-  AnthropicUsageIteration,
-} from "@ai-sdk/anthropic";
+import type { AnthropicMessageMetadata, AnthropicUsageIteration } from "@ai-sdk/anthropic";
 import type {
   JSONObject,
   LanguageModelV3FinishReason,
@@ -9,19 +6,14 @@ import type {
 } from "@ai-sdk/provider";
 import type { SDKResultMessage } from "@anthropic-ai/claude-agent-sdk";
 
-import { readNumber, readRecord, readString, isRecord } from "../shared/type-readers";
+import { isRecord, readNumber, readString } from "../shared/type-readers";
 
-export const mapFinishReason = (
-  rawFinishReason: string | null,
-): LanguageModelV3FinishReason => {
+export const mapFinishReason = (rawFinishReason: string | null): LanguageModelV3FinishReason => {
   if (rawFinishReason === "tool_use") {
     return { unified: "tool-calls", raw: rawFinishReason };
   }
 
-  if (
-    rawFinishReason === "max_tokens" ||
-    rawFinishReason === "model_context_window_exceeded"
-  ) {
+  if (rawFinishReason === "max_tokens" || rawFinishReason === "model_context_window_exceeded") {
     return { unified: "length", raw: rawFinishReason };
   }
 
@@ -93,9 +85,7 @@ export const mapIterations = (
         outputTokens,
       };
     })
-    .filter(
-      (value): value is AnthropicUsageIteration => value !== undefined,
-    );
+    .filter((value): value is AnthropicUsageIteration => value !== undefined);
 
   return mapped.length > 0 ? mapped : null;
 };
@@ -135,9 +125,7 @@ export const buildProviderMetadata = (
   };
 };
 
-export const mapUsageFromMessageDelta = (
-  usageValue: unknown,
-): LanguageModelV3Usage | undefined => {
+export const mapUsageFromMessageDelta = (usageValue: unknown): LanguageModelV3Usage | undefined => {
   if (!isRecord(usageValue)) {
     return undefined;
   }

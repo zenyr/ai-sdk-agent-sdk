@@ -1,20 +1,11 @@
-import { generateId } from "@ai-sdk/provider-utils";
 import type {
   LanguageModelV3Content,
   LanguageModelV3StreamPart,
   LanguageModelV3Usage,
 } from "@ai-sdk/provider";
-
-import {
-  isRecord,
-  readRecord,
-  readNumber,
-  readString,
-} from "../shared/type-readers";
-import {
-  StreamBlockState,
-  StreamEventState,
-} from "../shared/stream-types";
+import { generateId } from "@ai-sdk/provider-utils";
+import type { StreamEventState } from "../shared/stream-types";
+import { isRecord, readNumber, readRecord, readString } from "../shared/type-readers";
 import { mapUsageFromMessageDelta } from "./result-mapping";
 
 type StreamPartEnqueuer = {
@@ -80,8 +71,7 @@ export const appendStreamPartsFromRawEvent = (
       const blockId = readString(contentBlock, "id") ?? generateId();
       const toolName = readString(contentBlock, "name") ?? "unknown_tool";
       const providerExecuted =
-        contentBlockType === "server_tool_use" ||
-        contentBlockType === "mcp_tool_use";
+        contentBlockType === "server_tool_use" || contentBlockType === "mcp_tool_use";
       const dynamic = contentBlockType === "mcp_tool_use";
 
       streamState.blockStates.set(index, { kind: "tool-input", id: blockId });

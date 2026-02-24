@@ -5,10 +5,7 @@ import type {
   LanguageModelV3ProviderTool,
   SharedV3Warning,
 } from "@ai-sdk/provider";
-import type { CompletionMode } from "./completion-mode";
-
 import type { ThinkingConfig } from "@anthropic-ai/claude-agent-sdk";
-
 import { collectAnthropicProviderOptionWarnings } from "../internal/anthropic-option-warnings";
 import {
   isRecord,
@@ -17,6 +14,7 @@ import {
   readString,
   safeJsonStringify,
 } from "../shared/type-readers";
+import type { CompletionMode } from "./completion-mode";
 
 type ParsedAnthropicProviderOptions = {
   effort?: "low" | "medium" | "high" | "max";
@@ -72,9 +70,7 @@ const readLegacyToolCall = (value: unknown): StructuredToolCall | undefined => {
   return undefined;
 };
 
-const readLegacyToolCallsEnvelope = (
-  value: unknown,
-): StructuredToolEnvelope | undefined => {
+const readLegacyToolCallsEnvelope = (value: unknown): StructuredToolEnvelope | undefined => {
   const singleCall = readLegacyToolCall(value);
   if (singleCall !== undefined) {
     return {
@@ -124,12 +120,7 @@ export const parseAnthropicProviderOptions = (
   const parsed: ParsedAnthropicProviderOptions = {};
 
   const effort = readString(anthropicOptions, "effort");
-  if (
-    effort === "low" ||
-    effort === "medium" ||
-    effort === "high" ||
-    effort === "max"
-  ) {
+  if (effort === "low" || effort === "medium" || effort === "high" || effort === "max") {
     parsed.effort = effort;
   }
 
@@ -165,9 +156,7 @@ export const parseAnthropicProviderOptions = (
 
   return parsed;
 };
-export const isStructuredTextEnvelope = (
-  value: unknown,
-): value is StructuredTextEnvelope => {
+export const isStructuredTextEnvelope = (value: unknown): value is StructuredTextEnvelope => {
   if (!isRecord(value)) {
     return false;
   }
@@ -175,9 +164,7 @@ export const isStructuredTextEnvelope = (
   return value.type === "text" && typeof value.text === "string";
 };
 
-export const isStructuredToolEnvelope = (
-  value: unknown,
-): value is StructuredToolEnvelope => {
+export const isStructuredToolEnvelope = (value: unknown): value is StructuredToolEnvelope => {
   if (!isRecord(value)) {
     return false;
   }
@@ -253,8 +240,7 @@ export const collectWarnings = (
     warnings.push({
       type: "unsupported",
       feature: "temperature",
-      details:
-        "claude-agent-sdk backend does not expose direct temperature control.",
+      details: "claude-agent-sdk backend does not expose direct temperature control.",
     });
   }
 
@@ -278,8 +264,7 @@ export const collectWarnings = (
     warnings.push({
       type: "unsupported",
       feature: "presencePenalty",
-      details:
-        "claude-agent-sdk backend does not expose direct presence penalty control.",
+      details: "claude-agent-sdk backend does not expose direct presence penalty control.",
     });
   }
 
@@ -287,8 +272,7 @@ export const collectWarnings = (
     warnings.push({
       type: "unsupported",
       feature: "frequencyPenalty",
-      details:
-        "claude-agent-sdk backend does not expose direct frequency penalty control.",
+      details: "claude-agent-sdk backend does not expose direct frequency penalty control.",
     });
   }
 
@@ -296,8 +280,7 @@ export const collectWarnings = (
     warnings.push({
       type: "unsupported",
       feature: "seed",
-      details:
-        "claude-agent-sdk backend does not expose deterministic seed control.",
+      details: "claude-agent-sdk backend does not expose deterministic seed control.",
     });
   }
 
@@ -314,9 +297,7 @@ export const collectWarnings = (
     mode.type === "tools" &&
     options.tools !== undefined &&
     options.tools.some(
-      (
-        toolDefinition: LanguageModelV3FunctionTool | LanguageModelV3ProviderTool,
-      ) => {
+      (toolDefinition: LanguageModelV3FunctionTool | LanguageModelV3ProviderTool) => {
         return toolDefinition.type === "provider";
       },
     )

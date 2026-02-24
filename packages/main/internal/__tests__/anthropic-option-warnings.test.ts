@@ -1,29 +1,29 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, test } from "bun:test";
 
-import { collectAnthropicProviderOptionWarnings } from '../anthropic-option-warnings';
+import { collectAnthropicProviderOptionWarnings } from "../anthropic-option-warnings";
 
-describe('collectAnthropicProviderOptionWarnings', () => {
-  test('returns empty when provider options are missing', () => {
+describe("collectAnthropicProviderOptionWarnings", () => {
+  test("returns empty when provider options are missing", () => {
     const warnings = collectAnthropicProviderOptionWarnings(undefined);
     expect(warnings).toEqual([]);
   });
 
-  test('does not warn for mapped options', () => {
+  test("does not warn for mapped options", () => {
     const warnings = collectAnthropicProviderOptionWarnings({
       anthropic: {
-        effort: 'low',
-        thinking: { type: 'enabled', budgetTokens: 1024 },
+        effort: "low",
+        thinking: { type: "enabled", budgetTokens: 1024 },
       },
     });
 
     expect(warnings).toEqual([]);
   });
 
-  test('warns for degraded, unsupported, and unknown options', () => {
+  test("warns for degraded, unsupported, and unknown options", () => {
     const warnings = collectAnthropicProviderOptionWarnings({
       anthropic: {
         sendReasoning: true,
-        cacheControl: { type: 'ephemeral' },
+        cacheControl: { type: "ephemeral" },
         unknownOption: true,
       },
     });
@@ -31,34 +31,34 @@ describe('collectAnthropicProviderOptionWarnings', () => {
     expect(warnings.length).toBe(3);
 
     const features = warnings
-      .filter(warning => 'feature' in warning)
-      .map(warning => warning.feature)
+      .filter((warning) => "feature" in warning)
+      .map((warning) => warning.feature)
       .sort();
 
     expect(features).toEqual([
-      'providerOptions.anthropic.cacheControl',
-      'providerOptions.anthropic.sendReasoning',
+      "providerOptions.anthropic.cacheControl",
+      "providerOptions.anthropic.sendReasoning",
     ]);
 
-    const cacheControlWarning = warnings.find(warning => {
+    const cacheControlWarning = warnings.find((warning) => {
       return (
-        warning.type === 'unsupported' &&
-        'feature' in warning &&
-        warning.feature === 'providerOptions.anthropic.cacheControl'
+        warning.type === "unsupported" &&
+        "feature" in warning &&
+        warning.feature === "providerOptions.anthropic.cacheControl"
       );
     });
 
     expect(cacheControlWarning).toBeDefined();
 
     if (cacheControlWarning !== undefined) {
-      expect(cacheControlWarning.details.includes('1h cache')).toBeTrue();
+      expect(cacheControlWarning.details.includes("1h cache")).toBeTrue();
     }
 
     const otherMessages = warnings
-      .filter(warning => warning.type === 'other')
-      .map(warning => warning.message);
+      .filter((warning) => warning.type === "other")
+      .map((warning) => warning.message);
 
     expect(otherMessages.length).toBe(1);
-    expect(otherMessages[0]?.includes('unknownOption')).toBeTrue();
+    expect(otherMessages[0]?.includes("unknownOption")).toBeTrue();
   });
 });

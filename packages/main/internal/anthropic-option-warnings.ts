@@ -1,26 +1,26 @@
-import type { SharedV3ProviderOptions, SharedV3Warning } from '@ai-sdk/provider';
+import type { SharedV3ProviderOptions, SharedV3Warning } from "@ai-sdk/provider";
 
 const isRecord = (value: unknown): value is Record<string, unknown> => {
-  return typeof value === 'object' && value !== null;
+  return typeof value === "object" && value !== null;
 };
 
 const DEGRADE_ONLY_OPTIONS = new Set([
-  'sendReasoning',
-  'structuredOutputMode',
-  'disableParallelToolUse',
-  'toolStreaming',
+  "sendReasoning",
+  "structuredOutputMode",
+  "disableParallelToolUse",
+  "toolStreaming",
 ]);
 
 const UNSUPPORTED_OPTION_DETAILS: Record<string, string> = {
   cacheControl:
-    'This option is not supported on the Agent SDK backend. Prompt cache TTL (including 1h cache) cannot be configured via claude-agent-sdk options.',
-  mcpServers: 'This option is not supported on the Agent SDK backend.',
-  container: 'This option is not supported on the Agent SDK backend.',
-  speed: 'This option is not supported on the Agent SDK backend.',
-  contextManagement: 'This option is not supported on the Agent SDK backend.',
+    "This option is not supported on the Agent SDK backend. Prompt cache TTL (including 1h cache) cannot be configured via claude-agent-sdk options.",
+  mcpServers: "This option is not supported on the Agent SDK backend.",
+  container: "This option is not supported on the Agent SDK backend.",
+  speed: "This option is not supported on the Agent SDK backend.",
+  contextManagement: "This option is not supported on the Agent SDK backend.",
 };
 
-const MAPPED_OPTIONS = new Set(['effort', 'thinking']);
+const MAPPED_OPTIONS = new Set(["effort", "thinking"]);
 
 export const collectAnthropicProviderOptionWarnings = (
   providerOptions: SharedV3ProviderOptions | undefined,
@@ -43,17 +43,16 @@ export const collectAnthropicProviderOptionWarnings = (
 
     if (DEGRADE_ONLY_OPTIONS.has(optionName)) {
       warnings.push({
-        type: 'compatibility',
+        type: "compatibility",
         feature: `providerOptions.anthropic.${optionName}`,
-        details:
-          'This option is accepted but behavior may differ on the Agent SDK backend.',
+        details: "This option is accepted but behavior may differ on the Agent SDK backend.",
       });
       continue;
     }
 
     if (optionName in UNSUPPORTED_OPTION_DETAILS) {
       warnings.push({
-        type: 'unsupported',
+        type: "unsupported",
         feature: `providerOptions.anthropic.${optionName}`,
         details: UNSUPPORTED_OPTION_DETAILS[optionName],
       });
@@ -61,7 +60,7 @@ export const collectAnthropicProviderOptionWarnings = (
     }
 
     warnings.push({
-      type: 'other',
+      type: "other",
       message: `Unknown anthropic provider option '${optionName}' is ignored by this backend.`,
     });
   }

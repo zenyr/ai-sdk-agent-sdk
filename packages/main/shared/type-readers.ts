@@ -1,7 +1,4 @@
-import type {
-  LanguageModelV3FunctionTool,
-  LanguageModelV3ProviderTool,
-} from "@ai-sdk/provider";
+import type { LanguageModelV3FunctionTool, LanguageModelV3ProviderTool } from "@ai-sdk/provider";
 
 export const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === "object" && value !== null;
@@ -19,10 +16,7 @@ export const readRecord = (
   return value;
 };
 
-export const readString = (
-  record: Record<string, unknown>,
-  key: string,
-): string | undefined => {
+export const readString = (record: Record<string, unknown>, key: string): string | undefined => {
   const value = record[key];
   if (typeof value !== "string") {
     return undefined;
@@ -31,10 +25,7 @@ export const readString = (
   return value;
 };
 
-export const readNumber = (
-  record: Record<string, unknown>,
-  key: string,
-): number | undefined => {
+export const readNumber = (record: Record<string, unknown>, key: string): number | undefined => {
   const value = record[key];
   if (typeof value !== "number") {
     return undefined;
@@ -43,10 +34,7 @@ export const readNumber = (
   return value;
 };
 
-export const readArray = (
-  record: Record<string, unknown>,
-  key: string,
-): unknown[] | undefined => {
+export const readArray = (record: Record<string, unknown>, key: string): unknown[] | undefined => {
   const value = record[key];
   if (!Array.isArray(value)) {
     return undefined;

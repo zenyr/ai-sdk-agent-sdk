@@ -1,20 +1,8 @@
 import { z } from "zod";
 
-import {
-  isRecord,
-  readArray,
-  readRecord,
-  readString,
-} from "../shared/type-readers";
+import { isRecord, readArray, readRecord, readString } from "../shared/type-readers";
 
-type SupportedJsonType =
-  | "string"
-  | "number"
-  | "integer"
-  | "boolean"
-  | "null"
-  | "array"
-  | "object";
+type SupportedJsonType = "string" | "number" | "integer" | "boolean" | "null" | "array" | "object";
 
 const isSupportedJsonType = (value: unknown): value is SupportedJsonType => {
   return (
@@ -28,10 +16,7 @@ const isSupportedJsonType = (value: unknown): value is SupportedJsonType => {
   );
 };
 
-const readBoolean = (
-  record: Record<string, unknown>,
-  key: string,
-): boolean | undefined => {
+const readBoolean = (record: Record<string, unknown>, key: string): boolean | undefined => {
   const value = record[key];
   return typeof value === "boolean" ? value : undefined;
 };
@@ -95,9 +80,7 @@ const buildObjectSchema = (schema: Record<string, unknown>): z.ZodTypeAny => {
   for (const [propertyKey, propertySchema] of Object.entries(properties)) {
     const valueSchema = buildValueSchema(propertySchema);
 
-    shape[propertyKey] = requiredKeys.has(propertyKey)
-      ? valueSchema
-      : valueSchema.optional();
+    shape[propertyKey] = requiredKeys.has(propertyKey) ? valueSchema : valueSchema.optional();
   }
 
   let objectSchema: z.ZodTypeAny = z.object(shape);
@@ -169,9 +152,7 @@ const buildValueSchema = (schemaValue: unknown): z.ZodTypeAny => {
 
     const selectedType = nonNullTypes[0];
     let valueSchema =
-      selectedType === undefined
-        ? z.any()
-        : buildSchemaFromType(schemaValue, selectedType);
+      selectedType === undefined ? z.any() : buildSchemaFromType(schemaValue, selectedType);
 
     valueSchema = applyEnumConstraint(valueSchema, enumValues);
     valueSchema = applySchemaDescription(valueSchema, schemaValue);
@@ -217,9 +198,7 @@ export const buildZodRawShapeFromToolInputSchema = (
   for (const [propertyKey, propertySchema] of Object.entries(properties)) {
     const valueSchema = buildValueSchema(propertySchema);
 
-    shape[propertyKey] = requiredKeys.has(propertyKey)
-      ? valueSchema
-      : valueSchema.optional();
+    shape[propertyKey] = requiredKeys.has(propertyKey) ? valueSchema : valueSchema.optional();
   }
 
   return shape;

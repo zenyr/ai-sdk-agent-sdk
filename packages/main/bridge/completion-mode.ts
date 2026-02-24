@@ -1,17 +1,6 @@
-import type {
-  LanguageModelV3CallOptions,
-  LanguageModelV3FunctionTool,
-} from "@ai-sdk/provider";
+import type { LanguageModelV3CallOptions, LanguageModelV3FunctionTool } from "@ai-sdk/provider";
 
-import {
-  isFunctionTool,
-  isRecord,
-  safeJsonStringify,
-} from "../shared/type-readers";
-
-type CompletionModeBase = {
-  type: "plain-text" | "json" | "tools";
-};
+import { isFunctionTool, isRecord, safeJsonStringify } from "../shared/type-readers";
 
 export type CompletionMode =
   | {
@@ -67,9 +56,7 @@ export const buildToolSchema = (
 ): Record<string, unknown> => {
   const filteredTools =
     toolChoice?.type === "tool"
-      ? tools.filter(
-          (toolDefinition) => toolDefinition.name === toolChoice.toolName,
-        )
+      ? tools.filter((toolDefinition) => toolDefinition.name === toolChoice.toolName)
       : tools;
 
   const callVariants = filteredTools.map((toolDefinition) => {
@@ -116,9 +103,7 @@ export const buildToolSchema = (
   };
 };
 
-export const buildCompletionMode = (
-  options: LanguageModelV3CallOptions,
-): CompletionMode => {
+export const buildCompletionMode = (options: LanguageModelV3CallOptions): CompletionMode => {
   const tools = options.tools?.filter(isFunctionTool) ?? [];
   const hasToolMode = tools.length > 0 && options.toolChoice?.type !== "none";
 
@@ -131,9 +116,7 @@ export const buildCompletionMode = (
   }
 
   if (options.responseFormat?.type === "json") {
-    const schema = isRecord(options.responseFormat.schema)
-      ? options.responseFormat.schema
-      : {};
+    const schema = isRecord(options.responseFormat.schema) ? options.responseFormat.schema : {};
 
     return {
       type: "json",
