@@ -3,9 +3,8 @@ import { InvalidArgumentError, type LanguageModelV3, NoSuchModelError } from "@a
 import { generateId } from "@ai-sdk/provider-utils";
 
 import type { AgentSdkProviderSettings } from "../shared/tool-executor";
-
+import { fileIncomingSessionStore } from "./adapters/file-incoming-session-store";
 import { AgentSdkAnthropicLanguageModel } from "./agent-sdk-language-model";
-import { incomingSessionStore } from "./incoming-session-store";
 
 const anthropicTools = upstreamAnthropic.tools;
 
@@ -22,7 +21,7 @@ const createLanguageModelFactory = (args: {
       idGenerator: args.idGenerator,
       toolExecutors: args.settings.toolExecutors,
       maxTurns: args.settings.maxTurns,
-      sessionStore: incomingSessionStore,
+      sessionStore: fileIncomingSessionStore,
     });
   };
 };

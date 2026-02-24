@@ -40,6 +40,7 @@ import {
 import type { ToolExecutorMap } from "../shared/tool-executor";
 import { isRecord, readString, safeJsonStringify } from "../shared/type-readers";
 import { claudeAgentRuntime } from "./adapters/claude-agent-runtime";
+import { fileIncomingSessionStore } from "./adapters/file-incoming-session-store";
 import { createAbortBridge, prepareQueryContext } from "./application/query-context";
 import {
   buildIncomingSessionState,
@@ -60,7 +61,7 @@ import {
   recoverToolModeContentFromAssistantText,
   recoverToolModeToolCallsFromAssistant,
 } from "./domain/tool-recovery";
-import { type IncomingSessionState, incomingSessionStore } from "./incoming-session-store";
+import type { IncomingSessionState } from "./incoming-session-store";
 import type { AgentRuntimePort } from "./ports/agent-runtime-port";
 import type { IncomingSessionStorePort } from "./ports/incoming-session-store-port";
 
@@ -189,7 +190,7 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
     this.toolExecutors = args.toolExecutors;
     this.maxTurns = args.maxTurns;
     this.runtime = args.runtime ?? claudeAgentRuntime;
-    this.sessionStore = args.sessionStore ?? incomingSessionStore;
+    this.sessionStore = args.sessionStore ?? fileIncomingSessionStore;
     this.providerSettingWarnings = collectProviderSettingWarnings(this.settings);
     this.supportedUrls = DEFAULT_SUPPORTED_URLS;
   }
