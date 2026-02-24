@@ -49,6 +49,7 @@ import {
   readSessionIdFromQueryMessages,
 } from "./domain/incoming-session-state";
 import { mergePromptSessionState, type PromptSessionState } from "./domain/prompt-session-state";
+import { collectProviderSettingWarnings } from "./domain/provider-setting-warnings";
 import { buildQueryEnv } from "./domain/query-env";
 import {
   buildToolBridgeConfig,
@@ -123,29 +124,6 @@ const isStructuredOutputRetryExhausted = (resultMessage: SDKResultMessage): bool
 
 const EMPTY_TOOL_ROUTING_OUTPUT_ERROR = "empty-tool-routing-output";
 const EMPTY_TOOL_ROUTING_OUTPUT_TEXT = "Tool routing produced no tool call or text response.";
-
-const collectProviderSettingWarnings = (settings: AnthropicProviderSettings): SharedV3Warning[] => {
-  const warnings: SharedV3Warning[] = [];
-
-  const headers = settings.headers;
-  if (isRecord(headers) && Object.keys(headers).length > 0) {
-    warnings.push({
-      type: "unsupported",
-      feature: "providerSettings.headers",
-      details: "createAnthropic({ headers }) is not forwarded on claude-agent-sdk backend.",
-    });
-  }
-
-  if (typeof settings.fetch === "function") {
-    warnings.push({
-      type: "unsupported",
-      feature: "providerSettings.fetch",
-      details: "createAnthropic({ fetch }) is not forwarded on claude-agent-sdk backend.",
-    });
-  }
-
-  return warnings;
-};
 
 const buildPartialToolExecutorWarning = (missingExecutorToolNames: string[]): SharedV3Warning => {
   return {
