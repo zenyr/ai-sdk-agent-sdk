@@ -20,17 +20,13 @@ import type {
 } from "@anthropic-ai/claude-agent-sdk";
 import * as agentSdk from "@anthropic-ai/claude-agent-sdk";
 
-import { buildCompletionMode } from "../bridge/completion-mode";
 import {
-  collectWarnings,
   isStructuredTextEnvelope,
   isStructuredToolEnvelope,
   mapStructuredToolCallsToContent,
-  parseAnthropicProviderOptions,
   parseStructuredEnvelopeFromText,
   parseStructuredEnvelopeFromUnknown,
 } from "../bridge/parse-utils";
-import { extractSystemPromptFromMessages } from "../bridge/prompt-serializer";
 import { buildProviderMetadata, mapFinishReason, mapUsage } from "../bridge/result-mapping";
 import {
   appendStreamPartsFromRawEvent,
@@ -48,16 +44,18 @@ import type { ToolExecutorMap } from "../shared/tool-executor";
 import { isRecord, readRecord, readString, safeJsonStringify } from "../shared/type-readers";
 import { claudeAgentRuntime } from "./adapters/claude-agent-runtime";
 import {
+  createAbortBridge,
+  prepareQueryContext,
+  type ToolBridgeConfig,
+} from "./application/query-context";
+import {
   buildIncomingSessionState,
-  buildPromptQueryInputWithIncomingSession,
   findIncomingSessionState,
   mergeIncomingSessionState,
   readSessionIdFromQueryMessages,
 } from "./domain/incoming-session-state";
-import { buildMultimodalQueryPrompt } from "./domain/multimodal-prompt";
 import { mergePromptSessionState, type PromptSessionState } from "./domain/prompt-session-state";
 import { buildQueryEnv } from "./domain/query-env";
-import { readIncomingSessionKey } from "./domain/session-key";
 import { type IncomingSessionState, incomingSessionStore } from "./incoming-session-store";
 import type { AgentRuntimePort } from "./ports/agent-runtime-port";
 import type { IncomingSessionStorePort } from "./ports/incoming-session-store-port";
@@ -122,16 +120,6 @@ const EMPTY_TOOL_ROUTING_OUTPUT_ERROR = "empty-tool-routing-output";
 const EMPTY_TOOL_ROUTING_OUTPUT_TEXT = "Tool routing produced no tool call or text response.";
 const TOOL_BRIDGE_SERVER_NAME = "ai_sdk_tool_bridge";
 const TOOL_BRIDGE_NAME_PREFIX = `mcp__${TOOL_BRIDGE_SERVER_NAME}__`;
-
-type ToolBridgeConfig = {
-  allowedTools: string[];
-  mcpServers: NonNullable<AgentQueryOptions["mcpServers"]>;
-  hasAnyExecutor: boolean;
-  allToolsHaveExecutors: boolean;
-  missingExecutorToolNames: string[];
-};
-
-type QueryPromptInput = string | AsyncIterable<SDKUserMessage>;
 
 const toBridgeToolName = (toolName: string): string => {
   return `${TOOL_BRIDGE_NAME_PREFIX}${toolName}`;
@@ -497,77 +485,32 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
   }
 
   async doGenerate(options: LanguageModelV3CallOptions): Promise<LanguageModelV3GenerateResult> {
-    const completionMode = buildCompletionMode(options);
-    const anthropicOptions = parseAnthropicProviderOptions(options);
-    const warnings = [...collectWarnings(options, completionMode), ...this.providerSettingWarnings];
-
-    const incomingSessionKey = readIncomingSessionKey(options);
-    if (incomingSessionKey !== undefined) {
-      await this.hydrateIncomingSessionState(incomingSessionKey);
-    }
-
-    const promptQueryInput = buildPromptQueryInputWithIncomingSession({
-      promptMessages: options.prompt,
+    const {
+      completionMode,
+      warnings,
       incomingSessionKey,
-      previousSessionStates: this.promptSessionStates,
-      previousIncomingSessionStates: this.incomingSessionStates,
-    });
-    const basePrompt = promptQueryInput.prompt;
-    const systemPrompt = extractSystemPromptFromMessages(options.prompt);
-    let prompt = basePrompt;
-    let outputFormat: AgentQueryOptions["outputFormat"];
-    const toolBridgeConfig =
-      completionMode.type === "tools"
-        ? buildToolBridgeConfig(completionMode.tools, this.toolExecutors)
-        : undefined;
-    const useNativeToolExecution =
-      completionMode.type === "tools" && toolBridgeConfig?.allToolsHaveExecutors === true;
-
-    if (
-      completionMode.type === "tools" &&
-      toolBridgeConfig?.hasAnyExecutor === true &&
-      !useNativeToolExecution
-    ) {
-      warnings.push(buildPartialToolExecutorWarning(toolBridgeConfig.missingExecutorToolNames));
-    }
-
-    if (completionMode.type === "json") {
-      prompt = `Return only JSON that matches the required schema.\n\n${basePrompt}`;
-      outputFormat = {
-        type: "json_schema",
-        schema: completionMode.schema,
-      };
-    }
-
-    let queryPrompt: QueryPromptInput = prompt;
-    const multimodalQueryPrompt = await buildMultimodalQueryPrompt({
-      promptMessages: options.prompt,
-      resumeSessionId: promptQueryInput.resumeSessionId,
-      preambleText:
-        completionMode.type === "json"
-          ? "Return only JSON that matches the required schema."
-          : undefined,
+      promptQueryInput,
+      prompt,
+      systemPrompt,
+      outputFormat,
+      queryPrompt,
+      toolBridgeConfig,
+      useNativeToolExecution,
+      effort,
+      thinking,
+    } = await prepareQueryContext({
+      options,
+      providerSettingWarnings: this.providerSettingWarnings,
+      previousSessionStates: () => this.promptSessionStates,
+      previousIncomingSessionStates: () => this.incomingSessionStates,
+      hydrateIncomingSessionState: this.hydrateIncomingSessionState.bind(this),
+      buildToolBridgeConfig: (tools) => {
+        return buildToolBridgeConfig(tools, this.toolExecutors);
+      },
+      buildPartialToolExecutorWarning,
     });
 
-    if (multimodalQueryPrompt !== undefined) {
-      queryPrompt = multimodalQueryPrompt;
-    }
-
-    const abortController = new AbortController();
-    const externalAbortSignal = options.abortSignal;
-    const abortFromExternalSignal = () => {
-      abortController.abort();
-    };
-
-    if (externalAbortSignal !== undefined) {
-      if (externalAbortSignal.aborted) {
-        abortController.abort();
-      }
-
-      externalAbortSignal.addEventListener("abort", abortFromExternalSignal, {
-        once: true,
-      });
-    }
+    const { abortController, cleanupAbortListener } = createAbortBridge(options.abortSignal);
 
     const queryOptions: AgentQueryOptions = {
       model: this.modelId,
@@ -584,8 +527,8 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
       plugins: [],
       mcpServers: toolBridgeConfig?.mcpServers,
       outputFormat,
-      effort: anthropicOptions.effort,
-      thinking: anthropicOptions.thinking,
+      effort,
+      thinking,
       cwd: process.cwd(),
       includePartialMessages: completionMode.type === "tools",
     };
@@ -703,9 +646,7 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
         }
       }
     } finally {
-      if (externalAbortSignal !== undefined) {
-        externalAbortSignal.removeEventListener("abort", abortFromExternalSignal);
-      }
+      cleanupAbortListener();
     }
 
     const sessionId = readSessionIdFromQueryMessages({
@@ -1043,84 +984,32 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
   }
 
   async doStream(options: LanguageModelV3CallOptions): Promise<LanguageModelV3StreamResult> {
-    const completionMode = buildCompletionMode(options);
-    const anthropicOptions = parseAnthropicProviderOptions(options);
-    const warnings = [...collectWarnings(options, completionMode), ...this.providerSettingWarnings];
-
-    const incomingSessionKey = readIncomingSessionKey(options);
-    if (incomingSessionKey !== undefined) {
-      await this.hydrateIncomingSessionState(incomingSessionKey);
-    }
-
-    const promptQueryInput = buildPromptQueryInputWithIncomingSession({
-      promptMessages: options.prompt,
+    const {
+      completionMode,
+      warnings,
       incomingSessionKey,
-      previousSessionStates: this.promptSessionStates,
-      previousIncomingSessionStates: this.incomingSessionStates,
-    });
-    const basePrompt = promptQueryInput.prompt;
-    const systemPrompt = extractSystemPromptFromMessages(options.prompt);
-    let prompt = basePrompt;
-    let outputFormat: AgentQueryOptions["outputFormat"];
-    const toolBridgeConfig =
-      completionMode.type === "tools"
-        ? buildToolBridgeConfig(completionMode.tools, this.toolExecutors)
-        : undefined;
-    const useNativeToolExecution =
-      completionMode.type === "tools" && toolBridgeConfig?.allToolsHaveExecutors === true;
-
-    if (
-      completionMode.type === "tools" &&
-      toolBridgeConfig?.hasAnyExecutor === true &&
-      !useNativeToolExecution
-    ) {
-      warnings.push(buildPartialToolExecutorWarning(toolBridgeConfig.missingExecutorToolNames));
-    }
-
-    if (completionMode.type === "json") {
-      prompt = `Return only JSON that matches the required schema.\n\n${basePrompt}`;
-      outputFormat = {
-        type: "json_schema",
-        schema: completionMode.schema,
-      };
-    }
-
-    let queryPrompt: QueryPromptInput = prompt;
-    const multimodalQueryPrompt = await buildMultimodalQueryPrompt({
-      promptMessages: options.prompt,
-      resumeSessionId: promptQueryInput.resumeSessionId,
-      preambleText:
-        completionMode.type === "json"
-          ? "Return only JSON that matches the required schema."
-          : undefined,
+      promptQueryInput,
+      prompt,
+      systemPrompt,
+      outputFormat,
+      queryPrompt,
+      toolBridgeConfig,
+      useNativeToolExecution,
+      effort,
+      thinking,
+    } = await prepareQueryContext({
+      options,
+      providerSettingWarnings: this.providerSettingWarnings,
+      previousSessionStates: () => this.promptSessionStates,
+      previousIncomingSessionStates: () => this.incomingSessionStates,
+      hydrateIncomingSessionState: this.hydrateIncomingSessionState.bind(this),
+      buildToolBridgeConfig: (tools) => {
+        return buildToolBridgeConfig(tools, this.toolExecutors);
+      },
+      buildPartialToolExecutorWarning,
     });
 
-    if (multimodalQueryPrompt !== undefined) {
-      queryPrompt = multimodalQueryPrompt;
-    }
-
-    const abortController = new AbortController();
-    const externalAbortSignal = options.abortSignal;
-
-    const cleanupAbortListener = () => {
-      if (externalAbortSignal !== undefined) {
-        externalAbortSignal.removeEventListener("abort", abortFromExternalSignal);
-      }
-    };
-
-    const abortFromExternalSignal = () => {
-      abortController.abort();
-    };
-
-    if (externalAbortSignal !== undefined) {
-      if (externalAbortSignal.aborted) {
-        abortController.abort();
-      }
-
-      externalAbortSignal.addEventListener("abort", abortFromExternalSignal, {
-        once: true,
-      });
-    }
+    const { abortController, cleanupAbortListener } = createAbortBridge(options.abortSignal);
 
     const queryOptions: AgentQueryOptions = {
       model: this.modelId,
@@ -1137,8 +1026,8 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
       plugins: [],
       mcpServers: toolBridgeConfig?.mcpServers,
       outputFormat,
-      effort: anthropicOptions.effort,
-      thinking: anthropicOptions.thinking,
+      effort,
+      thinking,
       cwd: process.cwd(),
       includePartialMessages: true,
     };
