@@ -17,6 +17,46 @@ const createUniqueCacheKey = (prefix: string): string => {
   return `${prefix}-${Date.now()}-${Math.random()}`;
 };
 
+const isRecord = (value: unknown): value is Record<string, unknown> => {
+  return typeof value === "object" && value !== null;
+};
+
+const isAsyncIterable = (value: unknown): value is AsyncIterable<unknown> => {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  if (!(Symbol.asyncIterator in value)) {
+    return false;
+  }
+
+  const asyncIterator = Reflect.get(value, Symbol.asyncIterator);
+  return typeof asyncIterator === "function";
+};
+
+const readFirstPromptStreamMessage = async (
+  queryCall: unknown,
+): Promise<Record<string, unknown> | undefined> => {
+  if (!isRecord(queryCall)) {
+    return undefined;
+  }
+
+  const prompt = queryCall.prompt;
+  if (!isAsyncIterable(prompt)) {
+    return undefined;
+  }
+
+  for await (const promptMessage of prompt) {
+    if (!isRecord(promptMessage)) {
+      return undefined;
+    }
+
+    return promptMessage;
+  }
+
+  return undefined;
+};
+
 describe("stream bridge contract", () => {
   test("doStream emits metadata from stream events", async () => {
     mock.module("@anthropic-ai/claude-agent-sdk", () => {
@@ -544,6 +584,94 @@ describe("stream bridge contract", () => {
 
     expect(secondPrompt.includes("첫 질문")).toBeFalse();
     expect(secondPrompt.includes("두 번째 질문")).toBeTrue();
+  });
+
+  test("doStream sends image attachment through SDKUserMessage prompt stream", async () => {
+    const queryCalls: unknown[] = [];
+
+    mock.module("@anthropic-ai/claude-agent-sdk", () => {
+      return {
+        query: async function* (request: unknown) {
+          queryCalls.push(request);
+
+          yield {
+            type: "result",
+            subtype: "success",
+            stop_reason: "end_turn",
+            result: "ok",
+            usage: buildMockResultUsage(),
+            session_id: "stream-image-session-1",
+          };
+        },
+      };
+    });
+
+    const moduleId = `../index.ts?stream-contract-image-${Date.now()}-${Math.random()}`;
+    const { anthropic } = await import(moduleId);
+
+    const streamResult = await anthropic("claude-3-5-haiku-latest").doStream({
+      prompt: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "이 이미지를 설명해줘" },
+            {
+              type: "image",
+              mediaType: "image/png",
+              image: "data:image/png;base64,Zm9v",
+            },
+          ],
+        },
+      ],
+    });
+
+    for await (const _part of streamResult.stream) {
+      // consume stream
+    }
+
+    expect(queryCalls.length).toBe(1);
+
+    const firstPromptMessage = await readFirstPromptStreamMessage(queryCalls[0]);
+    expect(firstPromptMessage).toBeDefined();
+
+    if (firstPromptMessage === undefined) {
+      return;
+    }
+
+    const message = firstPromptMessage.message;
+    expect(isRecord(message)).toBeTrue();
+
+    if (!isRecord(message)) {
+      return;
+    }
+
+    const content = message.content;
+    expect(Array.isArray(content)).toBeTrue();
+
+    if (!Array.isArray(content)) {
+      return;
+    }
+
+    const imageBlock = content.find((contentBlock) => {
+      return isRecord(contentBlock) && contentBlock.type === "image";
+    });
+
+    expect(imageBlock).toBeDefined();
+
+    if (!isRecord(imageBlock)) {
+      return;
+    }
+
+    const source = imageBlock.source;
+    expect(isRecord(source)).toBeTrue();
+
+    if (!isRecord(source)) {
+      return;
+    }
+
+    expect(source.type).toBe("base64");
+    expect(source.media_type).toBe("image/png");
+    expect(source.data).toBe("Zm9v");
   });
 
   test("legacy compatibility: doStream reuses session from x-opencode-session header", async () => {

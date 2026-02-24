@@ -78,7 +78,11 @@ const isAsyncIterable = (value: unknown): value is AsyncIterable<unknown> => {
     return false;
   }
 
-  const asyncIterator = value[Symbol.asyncIterator];
+  if (!(Symbol.asyncIterator in value)) {
+    return false;
+  }
+
+  const asyncIterator = Reflect.get(value, Symbol.asyncIterator);
   return typeof asyncIterator === "function";
 };
 
@@ -1088,6 +1092,86 @@ describe("provider settings contract", () => {
 
     expect(queryCalls.length).toBe(2);
     expect(readResumeFromQueryCall(queryCalls, 1)).toBe("session-provider-options-1");
+  });
+
+  test("sends image attachment through SDKUserMessage prompt stream", async () => {
+    const queryCalls: unknown[] = [];
+
+    const { createAnthropic } = await importIndexWithMockedQuery({
+      queryCalls,
+      resultFactory: () => {
+        return {
+          type: "result",
+          subtype: "success",
+          stop_reason: "end_turn",
+          result: "ok",
+          usage: buildMockResultUsage(),
+          session_id: "image-session-1",
+        };
+      },
+    });
+
+    const model = createAnthropic({})("claude-3-5-haiku-latest");
+    await model.doGenerate({
+      prompt: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "이 이미지를 설명해줘" },
+            {
+              type: "image",
+              mediaType: "image/png",
+              image: "data:image/png;base64,Zm9v",
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(queryCalls.length).toBe(1);
+    expect(readPromptFromQueryCall(queryCalls, 0)).toBeUndefined();
+
+    const streamedPromptMessage = await readFirstPromptStreamMessageFromQueryCall(queryCalls, 0);
+    expect(streamedPromptMessage).toBeDefined();
+
+    if (streamedPromptMessage === undefined) {
+      return;
+    }
+
+    const message = streamedPromptMessage.message;
+    expect(isRecord(message)).toBeTrue();
+
+    if (!isRecord(message)) {
+      return;
+    }
+
+    const content = message.content;
+    expect(Array.isArray(content)).toBeTrue();
+
+    if (!Array.isArray(content)) {
+      return;
+    }
+
+    const imageBlock = content.find((contentBlock) => {
+      return isRecord(contentBlock) && contentBlock.type === "image";
+    });
+
+    expect(imageBlock).toBeDefined();
+
+    if (!isRecord(imageBlock)) {
+      return;
+    }
+
+    const source = imageBlock.source;
+    expect(isRecord(source)).toBeTrue();
+
+    if (!isRecord(source)) {
+      return;
+    }
+
+    expect(source.type).toBe("base64");
+    expect(source.media_type).toBe("image/png");
+    expect(source.data).toBe("Zm9v");
   });
 
   test("legacy compatibility: reuses session from x-opencode-session header", async () => {
