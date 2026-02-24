@@ -56,6 +56,11 @@ import {
 } from "./domain/incoming-session-state";
 import { mergePromptSessionState, type PromptSessionState } from "./domain/prompt-session-state";
 import { buildQueryEnv } from "./domain/query-env";
+import {
+  hasToolModePrimaryContent,
+  recoverToolModeContentFromAssistantText,
+  recoverToolModeToolCallsFromAssistant,
+} from "./domain/tool-recovery";
 import { type IncomingSessionState, incomingSessionStore } from "./incoming-session-store";
 import type { AgentRuntimePort } from "./ports/agent-runtime-port";
 import type { IncomingSessionStorePort } from "./ports/incoming-session-store-port";
@@ -274,95 +279,6 @@ const buildToolBridgeConfig = (
     allToolsHaveExecutors: hasAnyExecutor && missingExecutorToolNames.length === 0,
     missingExecutorToolNames,
   };
-};
-
-const hasToolModePrimaryContent = (content: LanguageModelV3Content[]): boolean => {
-  return content.some((part) => {
-    if (part.type === "tool-call") {
-      return true;
-    }
-
-    if (part.type === "text") {
-      return part.text.trim().length > 0;
-    }
-
-    return false;
-  });
-};
-
-const recoverToolModeToolCallsFromAssistant = (
-  assistantMessage: SDKAssistantMessage | undefined,
-  idGenerator: () => string,
-): LanguageModelV3Content[] => {
-  if (assistantMessage === undefined) {
-    return [];
-  }
-
-  const contentBlocks = assistantMessage.message.content;
-  if (!Array.isArray(contentBlocks)) {
-    return [];
-  }
-
-  const toolCalls: LanguageModelV3Content[] = [];
-
-  for (const block of contentBlocks) {
-    if (!isRecord(block)) {
-      continue;
-    }
-
-    const blockType = readString(block, "type");
-    if (
-      blockType !== "tool_use" &&
-      blockType !== "mcp_tool_use" &&
-      blockType !== "server_tool_use"
-    ) {
-      continue;
-    }
-
-    const rawToolName = readString(block, "name");
-    if (rawToolName === undefined) {
-      continue;
-    }
-
-    const toolCallId = readString(block, "id") ?? idGenerator();
-    const inputValue = "input" in block ? block.input : {};
-
-    toolCalls.push({
-      type: "tool-call",
-      toolCallId,
-      toolName: fromBridgeToolName(rawToolName),
-      input: safeJsonStringify(inputValue),
-      providerExecuted: false,
-    });
-  }
-
-  return toolCalls;
-};
-
-const recoverToolModeContentFromAssistantText = (
-  assistantMessage: SDKAssistantMessage | undefined,
-  idGenerator: () => string,
-): LanguageModelV3Content[] => {
-  const assistantText = extractAssistantText(assistantMessage);
-  if (assistantText.length === 0) {
-    return [];
-  }
-
-  const parsedEnvelope = parseStructuredEnvelopeFromText(assistantText);
-
-  if (isStructuredToolEnvelope(parsedEnvelope)) {
-    const toolCalls = mapStructuredToolCallsToContent(parsedEnvelope.calls, idGenerator);
-
-    if (toolCalls.length > 0) {
-      return toolCalls;
-    }
-  }
-
-  if (isStructuredTextEnvelope(parsedEnvelope)) {
-    return [{ type: "text", text: parsedEnvelope.text }];
-  }
-
-  return [{ type: "text", text: assistantText }];
 };
 
 const collectProviderSettingWarnings = (settings: AnthropicProviderSettings): SharedV3Warning[] => {
@@ -702,10 +618,11 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
           };
         }
 
-        const recoveredToolCalls = recoverToolModeToolCallsFromAssistant(
-          lastAssistantMessage,
-          this.idGenerator,
-        );
+        const recoveredToolCalls = recoverToolModeToolCallsFromAssistant({
+          assistantMessage: lastAssistantMessage,
+          idGenerator: this.idGenerator,
+          mapToolName: fromBridgeToolName,
+        });
 
         if (recoveredToolCalls.length > 0) {
           return {
@@ -822,10 +739,11 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
       }
 
       if (content.length === 0 && completionMode.type === "tools") {
-        const nativeToolCalls = recoverToolModeToolCallsFromAssistant(
-          lastAssistantMessage,
-          this.idGenerator,
-        );
+        const nativeToolCalls = recoverToolModeToolCallsFromAssistant({
+          assistantMessage: lastAssistantMessage,
+          idGenerator: this.idGenerator,
+          mapToolName: fromBridgeToolName,
+        });
 
         if (nativeToolCalls.length > 0) {
           content = nativeToolCalls;
@@ -897,10 +815,11 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
       }
 
       if (completionMode.type === "tools") {
-        const recoveredToolCalls = recoverToolModeToolCallsFromAssistant(
-          lastAssistantMessage,
-          this.idGenerator,
-        );
+        const recoveredToolCalls = recoverToolModeToolCallsFromAssistant({
+          assistantMessage: lastAssistantMessage,
+          idGenerator: this.idGenerator,
+          mapToolName: fromBridgeToolName,
+        });
 
         if (recoveredToolCalls.length > 0) {
           content = recoveredToolCalls;
@@ -917,10 +836,10 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
         isStructuredOutputRetryExhausted(finalResultMessage);
 
       if (canRecoverFromStructuredOutputRetry) {
-        const recoveredContent = recoverToolModeContentFromAssistantText(
-          lastAssistantMessage,
-          this.idGenerator,
-        );
+        const recoveredContent = recoverToolModeContentFromAssistantText({
+          assistantMessage: lastAssistantMessage,
+          idGenerator: this.idGenerator,
+        });
 
         if (recoveredContent.length > 0) {
           content = recoveredContent;
@@ -1228,10 +1147,11 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
             }
 
             if (!emittedToolModeToolCalls) {
-              const recoveredToolCalls = recoverToolModeToolCallsFromAssistant(
-                lastAssistantMessage,
-                this.idGenerator,
-              );
+              const recoveredToolCalls = recoverToolModeToolCallsFromAssistant({
+                assistantMessage: lastAssistantMessage,
+                idGenerator: this.idGenerator,
+                mapToolName: fromBridgeToolName,
+              });
 
               for (const recoveredToolCall of recoveredToolCalls) {
                 if (recoveredToolCall.type !== "tool-call") {
