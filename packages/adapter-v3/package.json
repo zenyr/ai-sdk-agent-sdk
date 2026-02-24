@@ -1,6 +1,6 @@
 {
   "name": "@zenyr/ai-sdk-agent-sdk-adapter-v3",
-  "version": "0.0.1-rc2",
+  "version": "0.0.1",
   "main": "./dist/index.js",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
