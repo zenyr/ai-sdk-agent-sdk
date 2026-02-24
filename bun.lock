@@ -5,10 +5,10 @@
     "": {
       "name": "ai-sdk-agent-sdk",
       "devDependencies": {
-        "@biomejs/biome": "latest",
-        "@changesets/cli": "^2.29.8",
-        "@types/bun": "latest",
-        "turbo": "latest",
+        "@biomejs/biome": "~2.4.4",
+        "@changesets/cli": "~2.29.8",
+        "@types/bun": "~1.3.9",
+        "turbo": "~2.8.10",
       },
       "peerDependencies": {
         "typescript": "^5",
@@ -16,7 +16,7 @@
     },
     "packages/adapter-v2": {
       "name": "@zenyr/ai-sdk-agent-sdk-adapter-v2",
-      "version": "0.0.1-rc2",
+      "version": "0.0.3",
       "dependencies": {
         "@ai-sdk/anthropic": "latest",
         "@ai-sdk/provider": "latest",
@@ -30,8 +30,8 @@
       },
     },
     "packages/adapter-v3": {
-      "name": "ai-sdk-agent-sdk-adapter-v3",
-      "version": "0.0.1-rc2",
+      "name": "@zenyr/ai-sdk-agent-sdk-adapter-v3",
+      "version": "0.0.3",
       "dependencies": {
         "@ai-sdk/anthropic": "latest",
         "ai-sdk-agent-sdk": "workspace:*",
@@ -45,18 +45,16 @@
     },
     "packages/main": {
       "name": "ai-sdk-agent-sdk",
-      "version": "0.0.1-rc2",
-      "dependencies": {
-        "@ai-sdk/anthropic": "latest",
-        "@ai-sdk/provider": "latest",
-        "@ai-sdk/provider-utils": "latest",
-        "@anthropic-ai/claude-agent-sdk": "latest",
-        "zod": "latest",
-      },
+      "version": "0.0.3",
       "devDependencies": {
-        "@types/bun": "latest",
+        "@types/bun": "~1.3.9",
+        "zod": "~4.3.6",
       },
       "peerDependencies": {
+        "@ai-sdk/anthropic": "^3",
+        "@ai-sdk/provider": "^3",
+        "@ai-sdk/provider-utils": "^4",
+        "@anthropic-ai/claude-agent-sdk": "^0",
         "typescript": "^5",
       },
     },
@@ -176,9 +174,9 @@
 
     "@zenyr/ai-sdk-agent-sdk-adapter-v2": ["@zenyr/ai-sdk-agent-sdk-adapter-v2@workspace:packages/adapter-v2"],
 
-    "ai-sdk-agent-sdk": ["ai-sdk-agent-sdk@workspace:packages/main"],
+    "@zenyr/ai-sdk-agent-sdk-adapter-v3": ["@zenyr/ai-sdk-agent-sdk-adapter-v3@workspace:packages/adapter-v3"],
 
-    "ai-sdk-agent-sdk-adapter-v3": ["ai-sdk-agent-sdk-adapter-v3@workspace:packages/adapter-v3"],
+    "ai-sdk-agent-sdk": ["ai-sdk-agent-sdk@workspace:packages/main"],
 
     "ansi-colors": ["ansi-colors@4.1.3", "", {}, "sha512-/6w/C21Pm1A7aZitlI5Ni/2J6FFQN8i1Cvz3kHABAAbw93v/NlvKdVOqz7CCWz/3iv/JplRSEEZ83XION15ovw=="],
 

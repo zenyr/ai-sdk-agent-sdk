@@ -30,15 +30,14 @@
   },
   "type": "module",
   "private": false,
-  "dependencies": {
-    "ai-sdk-agent-sdk": "workspace:*",
-    "@ai-sdk/anthropic": "latest",
-    "@ai-sdk/provider": "latest"
-  },
   "devDependencies": {
-    "@types/bun": "latest"
+    "@types/bun": "~1.3.9",
+    "ai-sdk-agent-sdk": "workspace:*"
   },
   "peerDependencies": {
+    "ai-sdk-agent-sdk": "*",
+    "@ai-sdk/anthropic": "^3",
+    "@ai-sdk/provider": "^3",
     "typescript": "^5"
   }
 }
