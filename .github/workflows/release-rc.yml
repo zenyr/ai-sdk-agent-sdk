@@ -1,0 +1,45 @@
+name: Release (RC)
+
+on:
+  push:
+    branches:
+      - next
+
+concurrency: ${{ github.workflow }}-${{ github.ref }}
+
+jobs:
+  release-rc:
+    name: Release RC
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Enter pre mode if not already
+        run: |
+          if ! grep -q '"mode": "pre"' .changeset/pre.json 2>/dev/null; then
+            bunx changeset pre enter rc
+          fi
+
+      - name: Create Release PR or Publish RC
+        uses: changesets/action@v1
+        with:
+          publish: bun run release
+          title: "chore: version packages (rc)"
+          commit: "chore: version packages (rc)"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
