@@ -32,7 +32,7 @@ Add the following entry inside the `providers` object in `~/.config/opencode/ope
 {
   "providers": {
     "claude-code": {
-      "npm": "ai-sdk-agent-sdk/v2",
+      "npm": "ai-sdk-agent-sdk",
       "name": "❋ Claude Code",
       "options": {
         "setCacheKey": true

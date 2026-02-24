@@ -1,5 +1,11 @@
 # ai-sdk-agent-sdk
 
+## 0.0.3
+
+### Patch Changes
+
+- fix: auto-route v2 if OPENCODE is truthy
+
 ## 0.0.2
 
 ### Patch Changes

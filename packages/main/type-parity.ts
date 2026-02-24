@@ -21,8 +21,14 @@ import type {
 type AssertNever<T extends never> = T;
 type AssertAssignable<From, _To extends From> = true;
 
+// Extensions that exist in local but not in upstream (intentional additions)
+type LocalOnlyKeys = "isOpenCode";
+
 type MissingInLocal = Exclude<keyof UpstreamAnthropic, keyof LocalAnthropic>;
-type MissingInUpstream = Exclude<keyof LocalAnthropic, keyof UpstreamAnthropic>;
+type MissingInUpstream = Exclude<
+  Exclude<keyof LocalAnthropic, keyof UpstreamAnthropic>,
+  LocalOnlyKeys
+>;
 
 type _assertNoMissingInLocal = AssertNever<MissingInLocal>;
 type _assertNoMissingInUpstream = AssertNever<MissingInUpstream>;

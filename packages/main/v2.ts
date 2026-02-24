@@ -10,9 +10,9 @@ import type {
 import {
   anthropic as anthropicV3,
   createAnthropic as createAnthropicV3,
-  forwardAnthropicContainerIdFromLastStep,
-  VERSION,
-} from "./index";
+} from "./provider/create-anthropic";
+import { forwardAnthropicContainerIdFromLastStep } from "./provider/forward-container";
+import { VERSION } from "./shared/constants";
 
 import type { AgentSdkProviderSettings } from "./shared/tool-executor";
 import { isRecord } from "./shared/type-readers";
