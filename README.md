@@ -10,6 +10,9 @@
 
 [![npm version](https://img.shields.io/npm/v/ai-sdk-agent-sdk)](https://www.npmjs.com/package/ai-sdk-agent-sdk)
 [![npm downloads](https://img.shields.io/npm/dm/ai-sdk-agent-sdk)](https://www.npmjs.com/package/ai-sdk-agent-sdk)
+[![experimental](https://img.shields.io/badge/status-experimental-orange)](https://github.com/zenyr/ai-sdk-agent-sdk)
+
+> **Warning:** This package is experimental. It works great — until it doesn't. Anthropic may change the Claude Agent SDK at any time, and this adapter will heroically attempt to keep up. Pin your versions. You have been warned. _(Probably fine though.)_
 
 Adapter that exposes Anthropic's Claude Agent SDK (tool use, streaming) as an [AI SDK](https://sdk.vercel.ai/) language model provider.
 
@@ -29,7 +32,7 @@ Add the following entry inside the `providers` object in `~/.config/opencode/ope
 {
   "providers": {
     "claude-code": {
-      "npm": "ai-sdk-agent-sdk",
+      "npm": "ai-sdk-agent-sdk/v2",
       "name": "❋ Claude Code",
       "options": {
         "setCacheKey": true
