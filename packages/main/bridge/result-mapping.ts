@@ -4,9 +4,20 @@ import type {
   LanguageModelV3FinishReason,
   LanguageModelV3Usage,
 } from "@ai-sdk/provider";
-import type { SDKResultMessage } from "@anthropic-ai/claude-agent-sdk";
 
 import { isRecord, readNumber, readString } from "../shared/type-readers";
+
+type ResultUsageLike = {
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_input_tokens: number;
+  cache_creation_input_tokens: number;
+  iterations?: unknown;
+};
+
+type ResultMessageLike = {
+  usage: ResultUsageLike;
+};
 
 export const mapFinishReason = (rawFinishReason: string | null): LanguageModelV3FinishReason => {
   if (rawFinishReason === "tool_use") {
@@ -32,7 +43,7 @@ export const mapFinishReason = (rawFinishReason: string | null): LanguageModelV3
   return { unified: "stop", raw: rawFinishReason };
 };
 
-export const mapUsage = (resultMessage: SDKResultMessage): LanguageModelV3Usage => {
+export const mapUsage = (resultMessage: ResultMessageLike): LanguageModelV3Usage => {
   const totalInput = resultMessage.usage.input_tokens;
   const cacheRead = resultMessage.usage.cache_read_input_tokens;
   const cacheWrite = resultMessage.usage.cache_creation_input_tokens;
@@ -54,7 +65,7 @@ export const mapUsage = (resultMessage: SDKResultMessage): LanguageModelV3Usage 
 };
 
 export const mapIterations = (
-  resultMessage: SDKResultMessage,
+  resultMessage: ResultMessageLike,
 ): AnthropicUsageIteration[] | null => {
   const iterations = resultMessage.usage.iterations;
   if (!Array.isArray(iterations)) {
@@ -90,7 +101,7 @@ export const mapIterations = (
   return mapped.length > 0 ? mapped : null;
 };
 
-export const mapMetadata = (resultMessage: SDKResultMessage): AnthropicMessageMetadata => {
+export const mapMetadata = (resultMessage: ResultMessageLike): AnthropicMessageMetadata => {
   return {
     usage: {},
     cacheCreationInputTokens: resultMessage.usage.cache_creation_input_tokens,
@@ -102,7 +113,7 @@ export const mapMetadata = (resultMessage: SDKResultMessage): AnthropicMessageMe
 };
 
 export const buildProviderMetadata = (
-  resultMessage: SDKResultMessage,
+  resultMessage: ResultMessageLike,
 ): Record<string, JSONObject> => {
   const metadata = mapMetadata(resultMessage);
 
