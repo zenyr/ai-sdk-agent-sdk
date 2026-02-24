@@ -37,7 +37,7 @@
     "test": "bun test",
     "test:e2e": "AI_SDK_AGENT_E2E=1 bun test __tests__/e2e --timeout 120000",
     "lint": "biome check . --write --unsafe",
-    "prepublishOnly": "bun run build && cp ../../README.md ./README.md && sed -i '' 's|./packages/main/CHANGELOG.md|./CHANGELOG.md|g' ./README.md",
+    "prepublishOnly": "bun run build && cp ../../README.md ./README.md && sed -i '' 's|./packages/main/CHANGELOG.md|./CHANGELOG.md|g' ./README.md && sed -i '' 's|./example.png|https://raw.githubusercontent.com/zenyr/ai-sdk-agent-sdk/main/example.png|g' ./README.md",
     "postpublish": "rm -f ./README.md"
   },
   "repository": {
