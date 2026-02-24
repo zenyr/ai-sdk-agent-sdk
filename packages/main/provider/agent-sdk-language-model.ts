@@ -3,7 +3,6 @@ import type {
   JSONObject,
   LanguageModelV3,
   LanguageModelV3CallOptions,
-  LanguageModelV3Content,
   LanguageModelV3GenerateResult,
   LanguageModelV3Message,
   LanguageModelV3StreamPart,
@@ -21,7 +20,6 @@ import type {
 import {
   isStructuredTextEnvelope,
   isStructuredToolEnvelope,
-  mapStructuredToolCallsToContent,
   parseStructuredEnvelopeFromText,
   parseStructuredEnvelopeFromUnknown,
 } from "../bridge/parse-utils";
@@ -38,9 +36,10 @@ import {
   type StreamEventState,
 } from "../shared/stream-types";
 import type { ToolExecutorMap } from "../shared/tool-executor";
-import { isRecord, readString, safeJsonStringify } from "../shared/type-readers";
+import { safeJsonStringify } from "../shared/type-readers";
 import { claudeAgentRuntime } from "./adapters/claude-agent-runtime";
 import { fileIncomingSessionStore } from "./adapters/file-incoming-session-store";
+import { runGenerate } from "./application/generate";
 import { createAbortBridge, prepareQueryContext } from "./application/query-context";
 import {
   buildIncomingSessionState,
@@ -57,11 +56,7 @@ import {
   isBridgeToolName,
   normalizeToolInputJson,
 } from "./domain/tool-bridge-config";
-import {
-  hasToolModePrimaryContent,
-  recoverToolModeContentFromAssistantText,
-  recoverToolModeToolCallsFromAssistant,
-} from "./domain/tool-recovery";
+import { recoverToolModeToolCallsFromAssistant } from "./domain/tool-recovery";
 import type { IncomingSessionState } from "./incoming-session-store";
 import type { AgentRuntimePort } from "./ports/agent-runtime-port";
 import type { IncomingSessionStorePort } from "./ports/incoming-session-store-port";
@@ -76,46 +71,6 @@ const isResultMessage = (message: SDKMessage): message is SDKResultMessage => {
 
 const isPartialAssistantMessage = (message: SDKMessage): message is SDKPartialAssistantMessage => {
   return message.type === "stream_event";
-};
-
-const extractAssistantText = (assistantMessage: SDKAssistantMessage | undefined): string => {
-  if (assistantMessage === undefined) {
-    return "";
-  }
-
-  const contentBlocks = assistantMessage.message.content;
-  if (!Array.isArray(contentBlocks)) {
-    return "";
-  }
-
-  const text = contentBlocks
-    .map((block) => {
-      if (!isRecord(block)) {
-        return "";
-      }
-
-      if (block.type !== "text") {
-        return "";
-      }
-
-      const textPart = readString(block, "text");
-      return typeof textPart === "string" ? textPart : "";
-    })
-    .join("");
-
-  return text;
-};
-
-const readNonEmptyString = (value: unknown): string | undefined => {
-  if (typeof value !== "string") {
-    return undefined;
-  }
-
-  if (value.length === 0) {
-    return undefined;
-  }
-
-  return value;
 };
 
 const isStructuredOutputRetryExhausted = (resultMessage: SDKResultMessage): boolean => {
@@ -222,505 +177,24 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
   }
 
   async doGenerate(options: LanguageModelV3CallOptions): Promise<LanguageModelV3GenerateResult> {
-    const {
-      completionMode,
-      warnings,
-      incomingSessionKey,
-      promptQueryInput,
-      prompt,
-      systemPrompt,
-      outputFormat,
-      queryPrompt,
-      toolBridgeConfig,
-      useNativeToolExecution,
-      effort,
-      thinking,
-    } = await prepareQueryContext({
+    return runGenerate({
       options,
+      modelId: this.modelId,
+      settings: this.settings,
+      idGenerator: this.idGenerator,
+      toolExecutors: this.toolExecutors,
+      maxTurns: this.maxTurns,
+      runtime: this.runtime,
       providerSettingWarnings: this.providerSettingWarnings,
       previousSessionStates: () => this.promptSessionStates,
+      setPromptSessionStates: (promptSessionStates) => {
+        this.promptSessionStates = promptSessionStates;
+      },
       previousIncomingSessionStates: () => this.incomingSessionStates,
       hydrateIncomingSessionState: this.hydrateIncomingSessionState.bind(this),
-      buildToolBridgeConfig: (tools) => {
-        return buildToolBridgeConfig(tools, this.toolExecutors);
-      },
+      persistIncomingSessionState: this.persistIncomingSessionState.bind(this),
       buildPartialToolExecutorWarning,
     });
-
-    const { abortController, cleanupAbortListener } = createAbortBridge(options.abortSignal);
-
-    const queryOptions: AgentQueryOptions = {
-      model: this.modelId,
-      tools: [],
-      allowedTools: toolBridgeConfig?.allowedTools ?? [],
-      resume: promptQueryInput.resumeSessionId,
-      systemPrompt,
-      permissionMode: "dontAsk",
-      settingSources: [],
-      maxTurns: useNativeToolExecution ? this.maxTurns : 1,
-      abortController,
-      env: buildQueryEnv(this.settings),
-      hooks: {},
-      plugins: [],
-      mcpServers: toolBridgeConfig?.mcpServers,
-      outputFormat,
-      effort,
-      thinking,
-      cwd: process.cwd(),
-      includePartialMessages: completionMode.type === "tools",
-    };
-
-    let lastAssistantMessage: SDKAssistantMessage | undefined;
-    let finalResultMessage: SDKResultMessage | undefined;
-    const partialStreamState: StreamEventState = {
-      blockStates: new Map<number, StreamBlockState>(),
-      emittedResponseMetadata: false,
-      latestStopReason: null,
-      latestUsage: undefined,
-    };
-    const pendingBridgeToolInputs = new Map<string, { toolName: string; deltas: string[] }>();
-    const recoveredToolCallsFromStream: LanguageModelV3Content[] = [];
-
-    const appendRecoveredToolCall = (args: {
-      toolCallId: string;
-      toolName: string;
-      rawInput: string;
-    }) => {
-      recoveredToolCallsFromStream.push({
-        type: "tool-call",
-        toolCallId: args.toolCallId,
-        toolName: fromBridgeToolName(args.toolName),
-        input: normalizeToolInputJson(args.rawInput),
-        providerExecuted: useNativeToolExecution,
-      });
-    };
-
-    try {
-      for await (const message of this.runtime.query({
-        prompt: queryPrompt,
-        options: queryOptions,
-      })) {
-        if (isPartialAssistantMessage(message)) {
-          const mappedParts = appendStreamPartsFromRawEvent(message.event, partialStreamState);
-
-          for (const mappedPart of mappedParts) {
-            if (
-              completionMode.type === "tools" &&
-              !useNativeToolExecution &&
-              mappedPart.type === "tool-input-start" &&
-              isBridgeToolName(mappedPart.toolName)
-            ) {
-              pendingBridgeToolInputs.set(mappedPart.id, {
-                toolName: mappedPart.toolName,
-                deltas: [],
-              });
-              continue;
-            }
-
-            if (
-              completionMode.type === "tools" &&
-              !useNativeToolExecution &&
-              mappedPart.type === "tool-input-delta"
-            ) {
-              const pendingBridgeInput = pendingBridgeToolInputs.get(mappedPart.id);
-
-              if (pendingBridgeInput !== undefined) {
-                pendingBridgeInput.deltas.push(mappedPart.delta);
-              }
-
-              continue;
-            }
-
-            if (
-              completionMode.type === "tools" &&
-              !useNativeToolExecution &&
-              mappedPart.type === "tool-input-end"
-            ) {
-              const pendingBridgeInput = pendingBridgeToolInputs.get(mappedPart.id);
-
-              if (pendingBridgeInput !== undefined) {
-                appendRecoveredToolCall({
-                  toolCallId: mappedPart.id,
-                  toolName: pendingBridgeInput.toolName,
-                  rawInput: pendingBridgeInput.deltas.join(""),
-                });
-
-                pendingBridgeToolInputs.delete(mappedPart.id);
-              }
-            }
-          }
-
-          continue;
-        }
-
-        if (isAssistantMessage(message)) {
-          lastAssistantMessage = message;
-        }
-
-        if (isResultMessage(message)) {
-          finalResultMessage = message;
-        }
-      }
-
-      const remainingParts = closePendingStreamBlocks(partialStreamState);
-      for (const remainingPart of remainingParts) {
-        if (
-          completionMode.type === "tools" &&
-          !useNativeToolExecution &&
-          remainingPart.type === "tool-input-end"
-        ) {
-          const pendingBridgeInput = pendingBridgeToolInputs.get(remainingPart.id);
-
-          if (pendingBridgeInput !== undefined) {
-            appendRecoveredToolCall({
-              toolCallId: remainingPart.id,
-              toolName: pendingBridgeInput.toolName,
-              rawInput: pendingBridgeInput.deltas.join(""),
-            });
-
-            pendingBridgeToolInputs.delete(remainingPart.id);
-          }
-        }
-      }
-    } finally {
-      cleanupAbortListener();
-    }
-
-    const sessionId = readSessionIdFromQueryMessages({
-      resultMessage: finalResultMessage,
-      assistantMessage: lastAssistantMessage,
-    });
-
-    if (sessionId !== undefined) {
-      const serializedPromptMessages = promptQueryInput.serializedPromptMessages;
-      if (serializedPromptMessages !== undefined) {
-        this.promptSessionStates = mergePromptSessionState({
-          previousSessionStates: this.promptSessionStates,
-          nextSessionState: {
-            sessionId,
-            serializedPromptMessages,
-          },
-        });
-      }
-
-      if (incomingSessionKey !== undefined) {
-        await this.persistIncomingSessionState(
-          buildIncomingSessionState({
-            incomingSessionKey,
-            sessionId,
-            promptMessages: options.prompt,
-          }),
-        );
-      }
-    }
-
-    if (finalResultMessage === undefined) {
-      if (completionMode.type === "tools" && !useNativeToolExecution) {
-        if (recoveredToolCallsFromStream.length > 0) {
-          return {
-            content: recoveredToolCallsFromStream,
-            finishReason: {
-              unified: "tool-calls",
-              raw: "tool_use",
-            },
-            usage: partialStreamState.latestUsage ?? createEmptyUsage(),
-            warnings,
-            request: {
-              body: {
-                prompt,
-                systemPrompt,
-                completionMode: completionMode.type,
-              },
-            },
-            response: {
-              modelId: this.modelId,
-              timestamp: new Date(),
-            },
-          };
-        }
-
-        const recoveredToolCalls = recoverToolModeToolCallsFromAssistant({
-          assistantMessage: lastAssistantMessage,
-          idGenerator: this.idGenerator,
-          mapToolName: fromBridgeToolName,
-        });
-
-        if (recoveredToolCalls.length > 0) {
-          return {
-            content: recoveredToolCalls,
-            finishReason: {
-              unified: "tool-calls",
-              raw: "tool_use",
-            },
-            usage: partialStreamState.latestUsage ?? createEmptyUsage(),
-            warnings,
-            request: {
-              body: {
-                prompt,
-                systemPrompt,
-                completionMode: completionMode.type,
-              },
-            },
-            response: {
-              modelId: this.modelId,
-              timestamp: new Date(),
-            },
-          };
-        }
-      }
-
-      return {
-        content: [{ type: "text", text: extractAssistantText(lastAssistantMessage) }],
-        finishReason: {
-          unified: "error",
-          raw: "agent-sdk-no-result",
-        },
-        usage: partialStreamState.latestUsage ?? createEmptyUsage(),
-        warnings,
-      };
-    }
-
-    const usage = mapUsage(finalResultMessage);
-    const providerMetadata = buildProviderMetadata(finalResultMessage);
-
-    let content: LanguageModelV3Content[] = [];
-    let finishReason = mapFinishReason(finalResultMessage.stop_reason);
-
-    if (completionMode.type === "tools" && useNativeToolExecution) {
-      if (finalResultMessage.subtype === "success") {
-        const assistantText = extractAssistantText(lastAssistantMessage);
-        const text = assistantText.length > 0 ? assistantText : finalResultMessage.result;
-        content = [{ type: "text", text }];
-      } else {
-        const errorText = finalResultMessage.errors.join("\n");
-        content = [
-          {
-            type: "text",
-            text: errorText,
-          },
-        ];
-        finishReason = {
-          unified: "error",
-          raw: finalResultMessage.subtype,
-        };
-      }
-
-      return {
-        content,
-        finishReason,
-        usage,
-        warnings,
-        providerMetadata,
-        request: {
-          body: {
-            prompt,
-            systemPrompt,
-            completionMode: completionMode.type,
-          },
-        },
-        response: {
-          modelId: this.modelId,
-          timestamp: new Date(),
-        },
-      };
-    }
-
-    if (finalResultMessage.subtype === "success") {
-      const structuredOutput = finalResultMessage.structured_output;
-      const parsedStructuredOutput =
-        completionMode.type === "tools"
-          ? parseStructuredEnvelopeFromUnknown(structuredOutput)
-          : undefined;
-
-      if (completionMode.type === "tools" && isStructuredToolEnvelope(parsedStructuredOutput)) {
-        const toolCalls = mapStructuredToolCallsToContent(
-          parsedStructuredOutput.calls,
-          this.idGenerator,
-        );
-
-        if (toolCalls.length > 0) {
-          content = toolCalls;
-          finishReason = {
-            unified: "tool-calls",
-            raw: "tool_use",
-          };
-        }
-      }
-
-      if (
-        content.length === 0 &&
-        completionMode.type === "tools" &&
-        recoveredToolCallsFromStream.length > 0
-      ) {
-        content = recoveredToolCallsFromStream;
-        finishReason = {
-          unified: "tool-calls",
-          raw: "tool_use",
-        };
-      }
-
-      if (content.length === 0 && completionMode.type === "tools") {
-        const nativeToolCalls = recoverToolModeToolCallsFromAssistant({
-          assistantMessage: lastAssistantMessage,
-          idGenerator: this.idGenerator,
-          mapToolName: fromBridgeToolName,
-        });
-
-        if (nativeToolCalls.length > 0) {
-          content = nativeToolCalls;
-          finishReason = {
-            unified: "tool-calls",
-            raw: "tool_use",
-          };
-        }
-      }
-
-      if (
-        content.length === 0 &&
-        completionMode.type === "tools" &&
-        isStructuredTextEnvelope(parsedStructuredOutput)
-      ) {
-        content = [{ type: "text", text: parsedStructuredOutput.text }];
-      }
-
-      if (content.length === 0 && completionMode.type === "json") {
-        if (structuredOutput !== undefined) {
-          content = [{ type: "text", text: safeJsonStringify(structuredOutput) }];
-        }
-      }
-
-      if (content.length === 0) {
-        const assistantText = extractAssistantText(lastAssistantMessage);
-        if (assistantText.length > 0) {
-          if (completionMode.type === "tools") {
-            const parsedEnvelope = parseStructuredEnvelopeFromText(assistantText);
-
-            if (isStructuredToolEnvelope(parsedEnvelope)) {
-              const toolCalls = mapStructuredToolCallsToContent(
-                parsedEnvelope.calls,
-                this.idGenerator,
-              );
-
-              if (toolCalls.length > 0) {
-                content = toolCalls;
-                finishReason = {
-                  unified: "tool-calls",
-                  raw: "tool_use",
-                };
-              }
-            }
-
-            if (content.length === 0 && isStructuredTextEnvelope(parsedEnvelope)) {
-              content = [{ type: "text", text: parsedEnvelope.text }];
-            }
-          }
-
-          if (content.length === 0) {
-            content = [{ type: "text", text: assistantText }];
-          }
-        }
-      }
-
-      if (content.length === 0) {
-        content = [{ type: "text", text: finalResultMessage.result }];
-      }
-    }
-
-    if (finalResultMessage.subtype !== "success") {
-      if (completionMode.type === "tools" && recoveredToolCallsFromStream.length > 0) {
-        content = recoveredToolCallsFromStream;
-        finishReason = {
-          unified: "tool-calls",
-          raw: "tool_use",
-        };
-      }
-
-      if (completionMode.type === "tools") {
-        const recoveredToolCalls = recoverToolModeToolCallsFromAssistant({
-          assistantMessage: lastAssistantMessage,
-          idGenerator: this.idGenerator,
-          mapToolName: fromBridgeToolName,
-        });
-
-        if (recoveredToolCalls.length > 0) {
-          content = recoveredToolCalls;
-          finishReason = {
-            unified: "tool-calls",
-            raw: "tool_use",
-          };
-        }
-      }
-
-      const canRecoverFromStructuredOutputRetry =
-        completionMode.type === "tools" &&
-        content.length === 0 &&
-        isStructuredOutputRetryExhausted(finalResultMessage);
-
-      if (canRecoverFromStructuredOutputRetry) {
-        const recoveredContent = recoverToolModeContentFromAssistantText({
-          assistantMessage: lastAssistantMessage,
-          idGenerator: this.idGenerator,
-        });
-
-        if (recoveredContent.length > 0) {
-          content = recoveredContent;
-
-          const hasRecoveredToolCalls = recoveredContent.some((part) => {
-            return part.type === "tool-call";
-          });
-
-          finishReason = {
-            unified: hasRecoveredToolCalls ? "tool-calls" : "stop",
-            raw: "error_max_structured_output_retries_recovered",
-          };
-        }
-      }
-
-      if (content.length === 0) {
-        const errorText = finalResultMessage.errors.join("\n");
-        content = [{ type: "text", text: errorText }];
-        finishReason = {
-          unified: "error",
-          raw: finalResultMessage.subtype,
-        };
-      }
-    }
-
-    if (
-      completionMode.type === "tools" &&
-      !hasToolModePrimaryContent(content) &&
-      finishReason.unified !== "error"
-    ) {
-      content = [
-        {
-          type: "text",
-          text: EMPTY_TOOL_ROUTING_OUTPUT_TEXT,
-        },
-      ];
-      finishReason = {
-        unified: "error",
-        raw: EMPTY_TOOL_ROUTING_OUTPUT_ERROR,
-      };
-    }
-
-    return {
-      content,
-      finishReason,
-      usage,
-      warnings,
-      providerMetadata,
-      request: {
-        body: {
-          prompt,
-          systemPrompt,
-          completionMode: completionMode.type,
-        },
-      },
-      response: {
-        modelId: this.modelId,
-        timestamp: new Date(),
-      },
-    };
   }
 
   async doStream(options: LanguageModelV3CallOptions): Promise<LanguageModelV3StreamResult> {
