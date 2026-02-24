@@ -1,6 +1,6 @@
 {
   "name": "ai-sdk-agent-sdk",
-  "version": "0.0.4",
+  "version": "0.0.5-rc.0",
   "main": "./dist/index.js",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",

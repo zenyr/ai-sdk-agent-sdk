@@ -1,0 +1,12 @@
+{
+  "mode": "pre",
+  "tag": "rc",
+  "initialVersions": {
+    "@zenyr/ai-sdk-agent-sdk-adapter-v2": "0.0.3",
+    "@zenyr/ai-sdk-agent-sdk-adapter-v3": "0.0.3",
+    "ai-sdk-agent-sdk": "0.0.4"
+  },
+  "changesets": [
+    "test-rc-workflow"
+  ]
+}
