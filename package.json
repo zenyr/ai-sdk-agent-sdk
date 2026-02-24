@@ -11,10 +11,14 @@
     "test": "turbo run test",
     "test:e2e": "turbo run test:e2e",
     "lint": "biome check . --write --unsafe",
-    "check": "bun run lint && bun run test"
+    "check": "bun run lint && bun run test",
+    "changeset": "changeset",
+    "version": "changeset version",
+    "release": "turbo run build && changeset publish"
   },
   "devDependencies": {
     "@biomejs/biome": "latest",
+    "@changesets/cli": "^2.29.8",
     "@types/bun": "latest",
     "turbo": "latest"
   },

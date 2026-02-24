@@ -73,6 +73,40 @@ const readPromptFromQueryCall = (queryCalls: unknown[], index: number): string |
   return prompt;
 };
 
+const isAsyncIterable = (value: unknown): value is AsyncIterable<unknown> => {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  const asyncIterator = value[Symbol.asyncIterator];
+  return typeof asyncIterator === "function";
+};
+
+const readFirstPromptStreamMessageFromQueryCall = async (
+  queryCalls: unknown[],
+  index: number,
+): Promise<Record<string, unknown> | undefined> => {
+  const queryCall = readQueryCall(queryCalls, index);
+  if (queryCall === undefined) {
+    return undefined;
+  }
+
+  const prompt = queryCall.prompt;
+  if (!isAsyncIterable(prompt)) {
+    return undefined;
+  }
+
+  for await (const promptMessage of prompt) {
+    if (!isRecord(promptMessage)) {
+      return undefined;
+    }
+
+    return promptMessage;
+  }
+
+  return undefined;
+};
+
 const readResumeFromQueryCall = (queryCalls: unknown[], index: number): string | undefined => {
   const options = readOptionsFromQueryCall(queryCalls, index);
   if (options === undefined) {

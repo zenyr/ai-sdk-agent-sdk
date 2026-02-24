@@ -18,6 +18,11 @@ export const contentPartToText = (part: unknown): string => {
     return `[file:${mediaType}]`;
   }
 
+  if (type === "image") {
+    const mediaType = readString(part, "mediaType") ?? "image/*";
+    return `[image:${mediaType}]`;
+  }
+
   if (type === "reasoning") {
     return "";
   }
