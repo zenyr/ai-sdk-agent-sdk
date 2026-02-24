@@ -865,6 +865,27 @@ const readIncomingSessionKeyFromProviderOptions = (
     }
   }
 
+  const knownNamespaces = new Set<string>([
+    ...CANONICAL_PROVIDER_OPTIONS_NAMESPACES,
+    ...LEGACY_PROVIDER_OPTIONS_NAMESPACES,
+  ]);
+
+  for (const [namespace, value] of Object.entries(providerOptions)) {
+    if (knownNamespaces.has(namespace)) {
+      continue;
+    }
+
+    const namespaceOptions = isRecord(value) ? value : undefined;
+    if (namespaceOptions === undefined) {
+      continue;
+    }
+
+    const discoveredSessionKey = readIncomingSessionKeyFromRecord(namespaceOptions);
+    if (discoveredSessionKey !== undefined) {
+      return discoveredSessionKey;
+    }
+  }
+
   return readIncomingSessionKeyFromRecord(providerOptions);
 };
 

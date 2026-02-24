@@ -1394,6 +1394,61 @@ describe("provider settings contract", () => {
     );
   });
 
+  test("discovers session from unknown providerOptions namespace via candidate keys", async () => {
+    const unknownNamespaceKey = createUniqueCacheKey("unknown-namespace-key");
+    const queryCalls: unknown[] = [];
+    let callCount = 0;
+
+    const { createAnthropic } = await importIndexWithMockedQuery({
+      queryCalls,
+      resultFactory: () => {
+        callCount += 1;
+
+        return {
+          type: "result",
+          subtype: "success",
+          stop_reason: "end_turn",
+          result: "ok",
+          usage: buildMockResultUsage(),
+          session_id: `unknown-namespace-session-${callCount}`,
+        };
+      },
+    });
+
+    const model = createAnthropic({})("claude-3-5-haiku-latest");
+
+    await model.doGenerate({
+      prompt: [
+        {
+          role: "user",
+          content: [{ type: "text", text: "첫 질문" }],
+        },
+      ],
+      providerOptions: {
+        openai: {
+          promptCacheKey: unknownNamespaceKey,
+        },
+      },
+    });
+
+    await model.doGenerate({
+      prompt: [
+        {
+          role: "user",
+          content: [{ type: "text", text: "두 번째 질문" }],
+        },
+      ],
+      providerOptions: {
+        openai: {
+          promptCacheKey: unknownNamespaceKey,
+        },
+      },
+    });
+
+    expect(queryCalls.length).toBe(2);
+    expect(readResumeFromQueryCall(queryCalls, 1)).toBe("unknown-namespace-session-1");
+  });
+
   test("persists conversationId join across model instance reload", async () => {
     const previousXdgCacheHome = process.env.XDG_CACHE_HOME;
     const xdgCacheHome = join(tmpdir(), createUniqueCacheKey("agent-sdk-session-cache"));
