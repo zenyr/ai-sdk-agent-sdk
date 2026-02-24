@@ -8,15 +8,8 @@ import { buildPromptQueryInputWithIncomingSession } from "../domain/incoming-ses
 import { buildMultimodalQueryPrompt } from "../domain/multimodal-prompt";
 import type { PromptQueryInput, PromptSessionState } from "../domain/prompt-session-state";
 import { readIncomingSessionKey } from "../domain/session-key";
+import type { ToolBridgeConfig } from "../domain/tool-bridge-config";
 import type { IncomingSessionState } from "../incoming-session-store";
-
-export type ToolBridgeConfig = {
-  allowedTools: string[];
-  mcpServers: NonNullable<AgentQueryOptions["mcpServers"]>;
-  hasAnyExecutor: boolean;
-  allToolsHaveExecutors: boolean;
-  missingExecutorToolNames: string[];
-};
 
 type QueryPromptInput = string | AsyncIterable<SDKUserMessage>;
 
