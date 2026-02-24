@@ -8,8 +8,6 @@ import type {
 import type {
   Options as AgentQueryOptions,
   SDKAssistantMessage,
-  SDKMessage,
-  SDKPartialAssistantMessage,
   SDKResultMessage,
 } from "@anthropic-ai/claude-agent-sdk";
 
@@ -31,7 +29,7 @@ import {
   type StreamEventState,
 } from "../../shared/stream-types";
 import type { ToolExecutorMap } from "../../shared/tool-executor";
-import { isRecord, readString, safeJsonStringify } from "../../shared/type-readers";
+import { safeJsonStringify } from "../../shared/type-readers";
 import {
   buildIncomingSessionState,
   readSessionIdFromQueryMessages,
@@ -52,53 +50,15 @@ import {
 import type { IncomingSessionState } from "../incoming-session-store";
 import type { AgentRuntimePort } from "../ports/agent-runtime-port";
 import { createAbortBridge, prepareQueryContext } from "./query-context";
-
-const EMPTY_TOOL_ROUTING_OUTPUT_ERROR = "empty-tool-routing-output";
-const EMPTY_TOOL_ROUTING_OUTPUT_TEXT = "Tool routing produced no tool call or text response.";
-
-const isAssistantMessage = (message: SDKMessage): message is SDKAssistantMessage => {
-  return message.type === "assistant";
-};
-
-const isResultMessage = (message: SDKMessage): message is SDKResultMessage => {
-  return message.type === "result";
-};
-
-const isPartialAssistantMessage = (message: SDKMessage): message is SDKPartialAssistantMessage => {
-  return message.type === "stream_event";
-};
-
-const extractAssistantText = (assistantMessage: SDKAssistantMessage | undefined): string => {
-  if (assistantMessage === undefined) {
-    return "";
-  }
-
-  const contentBlocks = assistantMessage.message.content;
-  if (!Array.isArray(contentBlocks)) {
-    return "";
-  }
-
-  const text = contentBlocks
-    .map((block) => {
-      if (!isRecord(block)) {
-        return "";
-      }
-
-      if (block.type !== "text") {
-        return "";
-      }
-
-      const textPart = readString(block, "text");
-      return typeof textPart === "string" ? textPart : "";
-    })
-    .join("");
-
-  return text;
-};
-
-const isStructuredOutputRetryExhausted = (resultMessage: SDKResultMessage): boolean => {
-  return resultMessage.subtype === "error_max_structured_output_retries";
-};
+import {
+  EMPTY_TOOL_ROUTING_OUTPUT_ERROR,
+  EMPTY_TOOL_ROUTING_OUTPUT_TEXT,
+  extractAssistantText,
+  isAssistantMessage,
+  isPartialAssistantMessage,
+  isResultMessage,
+  isStructuredOutputRetryExhausted,
+} from "./runtime-message-utils";
 
 export const runGenerate = async (args: {
   options: LanguageModelV3CallOptions;
