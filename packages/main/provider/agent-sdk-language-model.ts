@@ -32,6 +32,18 @@ const buildPartialToolExecutorWarning = (missingExecutorToolNames: string[]): Sh
   };
 };
 
+const readSessionStoreErrorMessage = (error: unknown): string => {
+  if (error instanceof Error && error.message.length > 0) {
+    return error.message;
+  }
+
+  if (typeof error === "string" && error.length > 0) {
+    return error;
+  }
+
+  return "unknown error";
+};
+
 export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
   readonly specificationVersion: "v3" = "v3";
   readonly provider: string;
@@ -45,6 +57,7 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
   private readonly runtime: AgentRuntimePort;
   private readonly sessionStore: IncomingSessionStorePort;
   private readonly providerSettingWarnings: SharedV3Warning[];
+  private readonly warnedSessionStoreFailures = new Set<string>();
   private promptSessionStates: PromptSessionState[] = [];
   private incomingSessionStates: IncomingSessionState[] = [];
 
@@ -70,6 +83,26 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
     this.supportedUrls = DEFAULT_SUPPORTED_URLS;
   }
 
+  private reportSessionStoreFailure(args: {
+    operation: "get" | "set";
+    incomingSessionKey: string;
+    error: unknown;
+  }): void {
+    const warningKey = `${args.operation}\u0000${args.incomingSessionKey}`;
+    if (this.warnedSessionStoreFailures.has(warningKey)) {
+      return;
+    }
+
+    this.warnedSessionStoreFailures.add(warningKey);
+
+    const errorMessage = readSessionStoreErrorMessage(args.error);
+    console.warn(
+      "ai-sdk-agent-sdk: session store " +
+        `${args.operation} failed (model=${this.modelId}, conversation=${args.incomingSessionKey}): ` +
+        errorMessage,
+    );
+  }
+
   private async hydrateIncomingSessionState(incomingSessionKey: string): Promise<void> {
     const existingIncomingSessionState = findIncomingSessionState({
       incomingSessionKey,
@@ -80,14 +113,20 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
       return;
     }
 
-    const persistedIncomingSessionState = await this.sessionStore
-      .get({
+    let persistedIncomingSessionState: IncomingSessionState | undefined;
+    try {
+      persistedIncomingSessionState = await this.sessionStore.get({
         modelId: this.modelId,
         incomingSessionKey,
-      })
-      .catch(() => {
-        return undefined;
       });
+    } catch (error) {
+      this.reportSessionStoreFailure({
+        operation: "get",
+        incomingSessionKey,
+        error,
+      });
+      return;
+    }
 
     if (persistedIncomingSessionState === undefined) {
       return;
@@ -107,15 +146,19 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
       nextIncomingSessionState: incomingSessionState,
     });
 
-    await this.sessionStore
-      .set({
+    try {
+      await this.sessionStore.set({
         modelId: this.modelId,
         incomingSessionKey: incomingSessionState.incomingSessionKey,
         state: incomingSessionState,
-      })
-      .catch(() => {
-        return undefined;
       });
+    } catch (error) {
+      this.reportSessionStoreFailure({
+        operation: "set",
+        incomingSessionKey: incomingSessionState.incomingSessionKey,
+        error,
+      });
+    }
   }
 
   async doGenerate(options: LanguageModelV3CallOptions): Promise<LanguageModelV3GenerateResult> {
