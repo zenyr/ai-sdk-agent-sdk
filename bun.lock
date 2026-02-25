@@ -16,36 +16,34 @@
     },
     "packages/adapter-v2": {
       "name": "@zenyr/ai-sdk-agent-sdk-adapter-v2",
-      "version": "0.0.3",
-      "dependencies": {
-        "@ai-sdk/anthropic": "latest",
-        "@ai-sdk/provider": "latest",
+      "version": "0.0.4-rc.0",
+      "devDependencies": {
+        "@types/bun": "~1.3.9",
         "ai-sdk-agent-sdk": "workspace:*",
       },
-      "devDependencies": {
-        "@types/bun": "latest",
-      },
       "peerDependencies": {
+        "@ai-sdk/anthropic": "^3",
+        "@ai-sdk/provider": "^3",
+        "ai-sdk-agent-sdk": "0.0.5-rc.0",
         "typescript": "^5",
       },
     },
     "packages/adapter-v3": {
       "name": "@zenyr/ai-sdk-agent-sdk-adapter-v3",
-      "version": "0.0.3",
-      "dependencies": {
-        "@ai-sdk/anthropic": "latest",
+      "version": "0.0.4-rc.0",
+      "devDependencies": {
+        "@types/bun": "~1.3.9",
         "ai-sdk-agent-sdk": "workspace:*",
       },
-      "devDependencies": {
-        "@types/bun": "latest",
-      },
       "peerDependencies": {
+        "@ai-sdk/anthropic": "^3",
+        "ai-sdk-agent-sdk": "0.0.5-rc.0",
         "typescript": "^5",
       },
     },
     "packages/main": {
       "name": "ai-sdk-agent-sdk",
-      "version": "0.0.3",
+      "version": "0.0.5-rc.0",
       "devDependencies": {
         "@types/bun": "~1.3.9",
         "zod": "~4.3.6",
@@ -55,6 +53,28 @@
         "@ai-sdk/provider": "^3",
         "@ai-sdk/provider-utils": "^4",
         "@anthropic-ai/claude-agent-sdk": "^0",
+        "typescript": "^5",
+      },
+    },
+    "packages/session-join-core": {
+      "name": "@zenyr/session-join-core",
+      "version": "0.0.0",
+      "devDependencies": {
+        "@types/bun": "~1.3.9",
+      },
+      "peerDependencies": {
+        "@ai-sdk/provider": "^3",
+        "typescript": "^5",
+      },
+    },
+    "packages/tool-routing-core": {
+      "name": "@zenyr/tool-routing-core",
+      "version": "0.0.0",
+      "devDependencies": {
+        "@types/bun": "~1.3.9",
+      },
+      "peerDependencies": {
+        "@ai-sdk/provider": "^3",
         "typescript": "^5",
       },
     },
@@ -175,6 +195,10 @@
     "@zenyr/ai-sdk-agent-sdk-adapter-v2": ["@zenyr/ai-sdk-agent-sdk-adapter-v2@workspace:packages/adapter-v2"],
 
     "@zenyr/ai-sdk-agent-sdk-adapter-v3": ["@zenyr/ai-sdk-agent-sdk-adapter-v3@workspace:packages/adapter-v3"],
+
+    "@zenyr/session-join-core": ["@zenyr/session-join-core@workspace:packages/session-join-core"],
+
+    "@zenyr/tool-routing-core": ["@zenyr/tool-routing-core@workspace:packages/tool-routing-core"],
 
     "ai-sdk-agent-sdk": ["ai-sdk-agent-sdk@workspace:packages/main"],
 
