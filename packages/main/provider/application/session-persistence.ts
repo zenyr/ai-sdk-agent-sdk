@@ -1,9 +1,4 @@
 import type { LanguageModelV3Message } from "@ai-sdk/provider";
-import type {
-  SDKAssistantMessage,
-  SDKResultMessage,
-  SDKSystemMessage,
-} from "@anthropic-ai/claude-agent-sdk";
 
 import {
   buildIncomingSessionState,
@@ -13,9 +8,9 @@ import { mergePromptSessionState, type PromptSessionState } from "../domain/prom
 import type { IncomingSessionState } from "../incoming-session-store";
 
 type PersistQuerySessionStateArgs = {
-  resultMessage: SDKResultMessage | undefined;
-  assistantMessage: SDKAssistantMessage | undefined;
-  initSystemMessage: SDKSystemMessage | undefined;
+  resultMessage: Record<string, unknown> | undefined;
+  assistantMessage: Record<string, unknown> | undefined;
+  initSystemMessage: Record<string, unknown> | undefined;
   incomingSessionKey: string | undefined;
   serializedPromptMessages: string[] | undefined;
   promptMessages: LanguageModelV3Message[];
