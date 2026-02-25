@@ -41,6 +41,11 @@ import {
 import { recoverToolModeToolCallsFromAssistant } from "../domain/tool-recovery";
 import type { IncomingSessionState } from "../incoming-session-store";
 import type { AgentRuntimePort } from "../ports/agent-runtime-port";
+import {
+  appendPendingBridgeToolInputDelta,
+  finishPendingBridgeToolInput,
+  startPendingBridgeToolInput,
+} from "./bridge-tool-input-buffer";
 import { createAbortBridge, prepareQueryContext } from "./query-context";
 import { buildAgentQueryOptions } from "./query-options";
 import {
@@ -159,41 +164,47 @@ export const runStream = async (args: {
                   dynamic: mappedPart.dynamic,
                 });
 
-                pendingBridgeToolInputs.set(mappedPart.id, {
+                startPendingBridgeToolInput({
+                  pendingBridgeToolInputs,
+                  id: mappedPart.id,
                   toolName: mappedPart.toolName,
-                  deltas: [],
                 });
                 continue;
               }
 
               if (completionMode.type === "tools" && mappedPart.type === "tool-input-delta") {
-                const pendingBridgeInput = pendingBridgeToolInputs.get(mappedPart.id);
+                const hasPendingBridgeToolInput = appendPendingBridgeToolInputDelta({
+                  pendingBridgeToolInputs,
+                  id: mappedPart.id,
+                  delta: mappedPart.delta,
+                });
 
-                if (pendingBridgeInput !== undefined) {
-                  pendingBridgeInput.deltas.push(mappedPart.delta);
+                if (hasPendingBridgeToolInput) {
                   controller.enqueue(mappedPart);
                   continue;
                 }
               }
 
               if (completionMode.type === "tools" && mappedPart.type === "tool-input-end") {
-                const pendingBridgeInput = pendingBridgeToolInputs.get(mappedPart.id);
+                const finishedBridgeToolInput = finishPendingBridgeToolInput({
+                  pendingBridgeToolInputs,
+                  id: mappedPart.id,
+                });
 
-                if (pendingBridgeInput !== undefined) {
+                if (finishedBridgeToolInput !== undefined) {
                   controller.enqueue(mappedPart);
 
-                  const input = normalizeToolInputJson(pendingBridgeInput.deltas.join(""));
+                  const input = normalizeToolInputJson(finishedBridgeToolInput.rawInput);
 
                   controller.enqueue({
                     type: "tool-call",
                     toolCallId: mappedPart.id,
-                    toolName: fromBridgeToolName(pendingBridgeInput.toolName),
+                    toolName: fromBridgeToolName(finishedBridgeToolInput.toolName),
                     input,
                     providerExecuted: useNativeToolExecution,
                   });
 
                   emittedToolModeToolCalls = true;
-                  pendingBridgeToolInputs.delete(mappedPart.id);
                   continue;
                 }
               }
@@ -240,23 +251,25 @@ export const runStream = async (args: {
         const remainingParts = closePendingStreamBlocks(streamState);
         for (const remainingPart of remainingParts) {
           if (completionMode.type === "tools" && remainingPart.type === "tool-input-end") {
-            const pendingBridgeInput = pendingBridgeToolInputs.get(remainingPart.id);
+            const finishedBridgeToolInput = finishPendingBridgeToolInput({
+              pendingBridgeToolInputs,
+              id: remainingPart.id,
+            });
 
-            if (pendingBridgeInput !== undefined) {
+            if (finishedBridgeToolInput !== undefined) {
               controller.enqueue(remainingPart);
 
-              const input = normalizeToolInputJson(pendingBridgeInput.deltas.join(""));
+              const input = normalizeToolInputJson(finishedBridgeToolInput.rawInput);
 
               controller.enqueue({
                 type: "tool-call",
                 toolCallId: remainingPart.id,
-                toolName: fromBridgeToolName(pendingBridgeInput.toolName),
+                toolName: fromBridgeToolName(finishedBridgeToolInput.toolName),
                 input,
                 providerExecuted: useNativeToolExecution,
               });
 
               emittedToolModeToolCalls = true;
-              pendingBridgeToolInputs.delete(remainingPart.id);
               continue;
             }
           }

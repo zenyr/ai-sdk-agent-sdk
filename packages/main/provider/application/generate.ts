@@ -44,6 +44,11 @@ import {
 } from "../domain/tool-recovery";
 import type { IncomingSessionState } from "../incoming-session-store";
 import type { AgentRuntimePort } from "../ports/agent-runtime-port";
+import {
+  appendPendingBridgeToolInputDelta,
+  finishPendingBridgeToolInput,
+  startPendingBridgeToolInput,
+} from "./bridge-tool-input-buffer";
 import { createAbortBridge, prepareQueryContext } from "./query-context";
 import { buildAgentQueryOptions } from "./query-options";
 import {
@@ -158,9 +163,10 @@ export const runGenerate = async (args: {
             mappedPart.type === "tool-input-start" &&
             isBridgeToolName(mappedPart.toolName)
           ) {
-            pendingBridgeToolInputs.set(mappedPart.id, {
+            startPendingBridgeToolInput({
+              pendingBridgeToolInputs,
+              id: mappedPart.id,
               toolName: mappedPart.toolName,
-              deltas: [],
             });
             continue;
           }
@@ -170,11 +176,11 @@ export const runGenerate = async (args: {
             !useNativeToolExecution &&
             mappedPart.type === "tool-input-delta"
           ) {
-            const pendingBridgeInput = pendingBridgeToolInputs.get(mappedPart.id);
-
-            if (pendingBridgeInput !== undefined) {
-              pendingBridgeInput.deltas.push(mappedPart.delta);
-            }
+            appendPendingBridgeToolInputDelta({
+              pendingBridgeToolInputs,
+              id: mappedPart.id,
+              delta: mappedPart.delta,
+            });
 
             continue;
           }
@@ -184,16 +190,17 @@ export const runGenerate = async (args: {
             !useNativeToolExecution &&
             mappedPart.type === "tool-input-end"
           ) {
-            const pendingBridgeInput = pendingBridgeToolInputs.get(mappedPart.id);
+            const finishedBridgeToolInput = finishPendingBridgeToolInput({
+              pendingBridgeToolInputs,
+              id: mappedPart.id,
+            });
 
-            if (pendingBridgeInput !== undefined) {
+            if (finishedBridgeToolInput !== undefined) {
               appendRecoveredToolCall({
                 toolCallId: mappedPart.id,
-                toolName: pendingBridgeInput.toolName,
-                rawInput: pendingBridgeInput.deltas.join(""),
+                toolName: finishedBridgeToolInput.toolName,
+                rawInput: finishedBridgeToolInput.rawInput,
               });
-
-              pendingBridgeToolInputs.delete(mappedPart.id);
             }
           }
         }
@@ -221,16 +228,17 @@ export const runGenerate = async (args: {
         !useNativeToolExecution &&
         remainingPart.type === "tool-input-end"
       ) {
-        const pendingBridgeInput = pendingBridgeToolInputs.get(remainingPart.id);
+        const finishedBridgeToolInput = finishPendingBridgeToolInput({
+          pendingBridgeToolInputs,
+          id: remainingPart.id,
+        });
 
-        if (pendingBridgeInput !== undefined) {
+        if (finishedBridgeToolInput !== undefined) {
           appendRecoveredToolCall({
             toolCallId: remainingPart.id,
-            toolName: pendingBridgeInput.toolName,
-            rawInput: pendingBridgeInput.deltas.join(""),
+            toolName: finishedBridgeToolInput.toolName,
+            rawInput: finishedBridgeToolInput.rawInput,
           });
-
-          pendingBridgeToolInputs.delete(remainingPart.id);
         }
       }
     }
