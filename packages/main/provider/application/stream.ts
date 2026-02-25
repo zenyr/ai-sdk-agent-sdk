@@ -7,9 +7,9 @@ import type {
   SharedV3Warning,
 } from "@ai-sdk/provider";
 import type {
-  Options as AgentQueryOptions,
   SDKAssistantMessage,
   SDKResultMessage,
+  SDKSystemMessage,
 } from "@anthropic-ai/claude-agent-sdk";
 
 import {
@@ -31,12 +31,7 @@ import {
 } from "../../shared/stream-types";
 import type { ToolExecutorMap } from "../../shared/tool-executor";
 import { safeJsonStringify } from "../../shared/type-readers";
-import {
-  buildIncomingSessionState,
-  readSessionIdFromQueryMessages,
-} from "../domain/incoming-session-state";
-import { mergePromptSessionState, type PromptSessionState } from "../domain/prompt-session-state";
-import { buildQueryEnv } from "../domain/query-env";
+import type { PromptSessionState } from "../domain/prompt-session-state";
 import {
   buildToolBridgeConfig,
   fromBridgeToolName,
@@ -47,6 +42,7 @@ import { recoverToolModeToolCallsFromAssistant } from "../domain/tool-recovery";
 import type { IncomingSessionState } from "../incoming-session-store";
 import type { AgentRuntimePort } from "../ports/agent-runtime-port";
 import { createAbortBridge, prepareQueryContext } from "./query-context";
+import { buildAgentQueryOptions } from "./query-options";
 import {
   EMPTY_TOOL_ROUTING_OUTPUT_ERROR,
   EMPTY_TOOL_ROUTING_OUTPUT_TEXT,
@@ -54,7 +50,9 @@ import {
   isPartialAssistantMessage,
   isResultMessage,
   isStructuredOutputRetryExhausted,
+  isSystemInitMessage,
 } from "./runtime-message-utils";
+import { persistQuerySessionState } from "./session-persistence";
 
 export const runStream = async (args: {
   options: LanguageModelV3CallOptions;
@@ -99,26 +97,21 @@ export const runStream = async (args: {
 
   const { abortController, cleanupAbortListener } = createAbortBridge(args.options.abortSignal);
 
-  const queryOptions: AgentQueryOptions = {
-    model: args.modelId,
-    tools: [],
+  const queryOptions = buildAgentQueryOptions({
+    modelId: args.modelId,
+    settings: args.settings,
     allowedTools: toolBridgeConfig?.allowedTools ?? [],
-    resume: promptQueryInput.resumeSessionId,
-    systemPrompt,
-    permissionMode: "dontAsk",
-    settingSources: [],
-    maxTurns: useNativeToolExecution ? args.maxTurns : 1,
-    abortController,
-    env: buildQueryEnv(args.settings),
-    hooks: {},
-    plugins: [],
     mcpServers: toolBridgeConfig?.mcpServers,
+    resumeSessionId: promptQueryInput.resumeSessionId,
+    systemPrompt,
+    maxTurns: args.maxTurns,
+    useNativeToolExecution,
+    abortController,
     outputFormat,
     effort,
     thinking,
-    cwd: process.cwd(),
     includePartialMessages: true,
-  };
+  });
 
   const streamState: StreamEventState = {
     blockStates: new Map<number, StreamBlockState>(),
@@ -132,6 +125,7 @@ export const runStream = async (args: {
     start: async (controller) => {
       let lastAssistantMessage: SDKAssistantMessage | undefined;
       let finalResultMessage: SDKResultMessage | undefined;
+      let initSystemMessage: SDKSystemMessage | undefined;
       let emittedToolModeToolCalls = false;
       let emittedToolModeText = false;
       const bufferedToolModeText: string[] = [];
@@ -229,6 +223,10 @@ export const runStream = async (args: {
 
           if (isResultMessage(message)) {
             finalResultMessage = message;
+          }
+
+          if (isSystemInitMessage(message)) {
+            initSystemMessage ??= message;
           }
         }
 
@@ -392,35 +390,17 @@ export const runStream = async (args: {
           }
         }
 
-        const sessionId = readSessionIdFromQueryMessages({
+        await persistQuerySessionState({
           resultMessage: finalResultMessage,
           assistantMessage: lastAssistantMessage,
+          initSystemMessage,
+          incomingSessionKey,
+          serializedPromptMessages: promptQueryInput.serializedPromptMessages,
+          promptMessages: args.options.prompt,
+          previousSessionStates: args.previousSessionStates,
+          setPromptSessionStates: args.setPromptSessionStates,
+          persistIncomingSessionState: args.persistIncomingSessionState,
         });
-
-        if (sessionId !== undefined) {
-          const serializedPromptMessages = promptQueryInput.serializedPromptMessages;
-          if (serializedPromptMessages !== undefined) {
-            args.setPromptSessionStates(
-              mergePromptSessionState({
-                previousSessionStates: args.previousSessionStates(),
-                nextSessionState: {
-                  sessionId,
-                  serializedPromptMessages,
-                },
-              }),
-            );
-          }
-
-          if (incomingSessionKey !== undefined) {
-            await args.persistIncomingSessionState(
-              buildIncomingSessionState({
-                incomingSessionKey,
-                sessionId,
-                promptMessages: args.options.prompt,
-              }),
-            );
-          }
-        }
 
         if (
           completionMode.type === "tools" &&

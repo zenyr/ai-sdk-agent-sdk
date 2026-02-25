@@ -36,6 +36,15 @@ describe("runtime surface contract", () => {
     expect(typeof forwardAnthropicContainerIdFromLastStep).toBe("function");
   });
 
+  test("VERSION matches package version", async () => {
+    const { VERSION } = await loadMainModule();
+    const packageJson = JSON.parse(
+      await Bun.file(new URL("../package.json", import.meta.url)).text(),
+    );
+
+    expect(VERSION).toBe(packageJson.version);
+  });
+
   test("provider exposes same tool keys as upstream anthropic", async () => {
     const { anthropic } = await loadMainModule();
 

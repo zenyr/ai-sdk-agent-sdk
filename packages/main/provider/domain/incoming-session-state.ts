@@ -1,6 +1,4 @@
 import type { LanguageModelV3Message } from "@ai-sdk/provider";
-import type { SDKAssistantMessage, SDKResultMessage } from "@anthropic-ai/claude-agent-sdk";
-
 import { serializeMessage } from "../../bridge/prompt-serializer";
 import { isRecord, readString } from "../../shared/type-readers";
 import type { IncomingSessionState } from "../incoming-session-store";
@@ -164,8 +162,9 @@ export const buildPromptQueryInputWithIncomingSession = (args: {
 };
 
 export const readSessionIdFromQueryMessages = (args: {
-  resultMessage: SDKResultMessage | undefined;
-  assistantMessage: SDKAssistantMessage | undefined;
+  resultMessage: Record<string, unknown> | undefined;
+  assistantMessage: Record<string, unknown> | undefined;
+  initSystemMessage: Record<string, unknown> | undefined;
 }): string | undefined => {
   if (isRecord(args.resultMessage)) {
     const sessionIdFromResult = readString(args.resultMessage, "session_id");
@@ -174,9 +173,16 @@ export const readSessionIdFromQueryMessages = (args: {
     }
   }
 
-  if (!isRecord(args.assistantMessage)) {
+  const sessionIdFromAssistantMessage = isRecord(args.assistantMessage)
+    ? readString(args.assistantMessage, "session_id")
+    : undefined;
+  if (sessionIdFromAssistantMessage !== undefined) {
+    return sessionIdFromAssistantMessage;
+  }
+
+  if (!isRecord(args.initSystemMessage) || args.initSystemMessage.subtype !== "init") {
     return undefined;
   }
 
-  return readString(args.assistantMessage, "session_id");
+  return readString(args.initSystemMessage, "session_id");
 };

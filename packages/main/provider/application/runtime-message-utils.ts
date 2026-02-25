@@ -3,6 +3,7 @@ import type {
   SDKMessage,
   SDKPartialAssistantMessage,
   SDKResultMessage,
+  SDKSystemMessage,
 } from "@anthropic-ai/claude-agent-sdk";
 
 import { isRecord, readString } from "../../shared/type-readers";
@@ -23,6 +24,10 @@ export const isPartialAssistantMessage = (
   message: SDKMessage,
 ): message is SDKPartialAssistantMessage => {
   return message.type === "stream_event";
+};
+
+export const isSystemInitMessage = (message: SDKMessage): message is SDKSystemMessage => {
+  return message.type === "system" && message.subtype === "init";
 };
 
 export const isStructuredOutputRetryExhausted = (resultMessage: SDKResultMessage): boolean => {

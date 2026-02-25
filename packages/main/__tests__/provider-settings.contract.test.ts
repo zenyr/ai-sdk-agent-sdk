@@ -989,6 +989,63 @@ describe("provider settings contract", () => {
     expect(secondPrompt.includes("두 번째 질문")).toBeTrue();
   });
 
+  test("reuses session from init system message when result omits session id", async () => {
+    const conversationId = createUniqueCacheKey("conversation-init-system");
+    const queryCalls: unknown[] = [];
+    let callCount = 0;
+
+    const { createAnthropic } = await importIndexWithMockedQuery({
+      queryCalls,
+      messagesFactory: () => {
+        callCount += 1;
+
+        return [
+          {
+            type: "system",
+            subtype: "init",
+            session_id: `session-init-system-${callCount}`,
+          },
+          {
+            type: "result",
+            subtype: "success",
+            stop_reason: "end_turn",
+            result: "ok",
+            usage: buildMockResultUsage(),
+          },
+        ];
+      },
+    });
+
+    const model = createAnthropic({})("claude-3-5-haiku-latest");
+
+    await model.doGenerate({
+      prompt: [
+        {
+          role: "user",
+          content: [{ type: "text", text: "첫 질문" }],
+        },
+      ],
+      headers: {
+        "x-conversation-id": conversationId,
+      },
+    });
+
+    await model.doGenerate({
+      prompt: [
+        {
+          role: "user",
+          content: [{ type: "text", text: "두 번째 질문" }],
+        },
+      ],
+      headers: {
+        "x-conversation-id": conversationId,
+      },
+    });
+
+    expect(queryCalls.length).toBe(2);
+    expect(readResumeFromQueryCall(queryCalls, 1)).toBe("session-init-system-1");
+  });
+
   test("reuses session from telemetry metadata conversationId", async () => {
     const conversationId = createUniqueCacheKey("conversation-telemetry");
     const queryCalls: unknown[] = [];
