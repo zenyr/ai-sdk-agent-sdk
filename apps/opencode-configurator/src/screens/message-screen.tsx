@@ -10,7 +10,7 @@ type MessageScreenProps = {
 
 export const MessageScreen = ({ title, lines, width, tone }: MessageScreenProps) => {
   return (
-    <Panel title={title} tone={tone}>
+    <Panel title={title} tone={tone} fill={true}>
       {lines.map(line => (
         <box key={line} style={{ flexDirection: "column" }}>
           <WrappedText text={line} width={width} />

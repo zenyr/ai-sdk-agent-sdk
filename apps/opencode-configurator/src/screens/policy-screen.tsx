@@ -1,4 +1,3 @@
-import { ActionButton } from "../components/action-button";
 import { ClickableBox } from "../components/clickable-box";
 import { Panel } from "../components/panel";
 import { WrappedText } from "../components/wrapped-text";
@@ -29,25 +28,37 @@ export const PolicyScreen = ({
   onSubmit,
 }: PolicyScreenProps) => {
   return (
-    <Panel title="Choose selection policy" footer="Arrow keys move. Enter previews. Backspace goes back.">
+    <Panel fill={true}>
       {options.map((option, index) => (
         <ClickableBox
           key={option.value}
-          style={{ flexDirection: "column", marginBottom: 1 }}
-          backgroundColor={index === selectedIndex ? "cyan" : undefined}
-          onPress={() => onSubmit(index)}
+          style={{ flexDirection: "column", marginBottom: 1, flexShrink: 0 }}
+          active={index === selectedIndex}
+          onPress={() => {
+            if (index === selectedIndex) {
+              onSubmit(index);
+              return;
+            }
+
+            onSelect(index);
+          }}
         >
-          <WrappedText
-            text={`${index === selectedIndex ? ">" : " "} ${option.label}${option.value === recommendedValue ? " (recommended)" : ""} - ${option.description}`}
-            width={width}
-          />
-          <WrappedText text={`Estimated models: ${modelCounts[option.value] ?? 0}`} width={width} />
+          {({ hovered, active }) => (
+            <>
+              <WrappedText
+                text={`${active ? ">" : " "} ${option.label}${option.value === recommendedValue ? " (recommended)" : ""} - ${option.description}`}
+                width={width}
+                color={hovered || active ? "white" : "gray"}
+              />
+              <WrappedText
+                text={`Estimated models: ${modelCounts[option.value] ?? 0}`}
+                width={width}
+                color={hovered || active ? "white" : "gray"}
+              />
+            </>
+          )}
         </ClickableBox>
       ))}
-      <box style={{ flexDirection: "row", justifyContent: "space-between", marginTop: 1 }}>
-        <ActionButton label="Select highlighted" onPress={() => onSelect(selectedIndex)} />
-        <ActionButton label="Continue" tone="accent" onPress={() => onSubmit(selectedIndex)} />
-      </box>
     </Panel>
   );
 };

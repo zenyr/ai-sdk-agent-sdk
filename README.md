@@ -32,6 +32,22 @@ bun add ai-sdk-agent-sdk
 
 ## Usage with opencode
 
+Recommended path:
+
+```bash
+bunx ai-sdk-agent-sdk-opencode-configurator setup
+```
+
+The configurator updates the OpenCode config file directly, fetches the current Anthropic model list from `models.dev`, keeps the default selection to mainstream Haiku/Sonnet/Opus, and generates thinking variants for reasoning-capable models.
+
+Useful commands:
+
+```bash
+bunx ai-sdk-agent-sdk-opencode-configurator status
+bunx ai-sdk-agent-sdk-opencode-configurator update --global
+bunx ai-sdk-agent-sdk-opencode-configurator remove --provider-id agent-sdk
+```
+
 Add the following entry inside the `providers` object in `~/.config/opencode/opencode.jsonc`:
 
 ```jsonc

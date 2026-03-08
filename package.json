@@ -1,6 +1,7 @@
 {
   "name": "@zenyr/ai-sdk-agent-sdk",
   "workspaces": [
+    "apps/*",
     "packages/*"
   ],
   "type": "module",
@@ -10,6 +11,7 @@
     "build": "turbo run build",
     "test": "turbo run test",
     "test:e2e": "turbo run test:e2e",
+    "config": "bun run ./apps/opencode-configurator/src/cli.tsx",
     "lint": "biome check . --write --unsafe",
     "lint:check": "biome check .",
     "commitlint": "commitlint --edit",

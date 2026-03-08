@@ -1,51 +1,31 @@
-import { colors } from "../lib/theme";
 import { Panel } from "./panel";
-import { WrappedText } from "./wrapped-text";
 
 type HeaderProps = {
   title: string;
-  subtitle: string;
   currentStepLabel: string;
   currentStepNumber?: number;
   totalSteps: number;
-  contextItems: string[];
-  width: number;
 };
 
-export const Header = ({
-  title,
-  subtitle,
-  currentStepLabel,
-  currentStepNumber,
-  totalSteps,
-  contextItems,
-  width,
-}: HeaderProps) => {
-  const stepText =
-    currentStepNumber === undefined
-      ? `Status: ${currentStepLabel}`
-      : `Step ${currentStepNumber}/${totalSteps} - ${currentStepLabel}`;
+export const Header = ({ title, currentStepLabel, currentStepNumber, totalSteps }: HeaderProps) => {
+  const stepCount = currentStepNumber === undefined ? "Status" : `Step ${currentStepNumber}/${totalSteps}`;
 
   return (
-    <Panel tone="accent">
+    <Panel>
       <box style={{ flexDirection: "column" }}>
-        <box>
+        <box style={{ flexDirection: "row" }}>
           <text>{title}</text>
+          <box style={{ flexGrow: 1 }} />
+          <text>{stepCount}</text>
         </box>
-        <box backgroundColor={colors.warning}>
-          <text>{stepText}</text>
+        <box style={{ marginTop: 1 }}>
+          <text>
+            <span fg="gray" bold>
+              {currentStepLabel}
+            </span>
+          </text>
         </box>
       </box>
-      <box style={{ marginTop: 1 }}>
-        <WrappedText text={subtitle} width={width} />
-      </box>
-      {contextItems.length > 0 ? (
-        <box style={{ flexDirection: "column", marginTop: 1 }}>
-          {contextItems.map(item => (
-            <WrappedText key={item} text={item} width={width} />
-          ))}
-        </box>
-      ) : null}
     </Panel>
   );
 };

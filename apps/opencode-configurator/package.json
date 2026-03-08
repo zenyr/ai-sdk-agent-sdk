@@ -1,0 +1,44 @@
+{
+  "name": "ai-sdk-agent-sdk-opencode-configurator",
+  "version": "0.0.0",
+  "main": "./dist/cli.js",
+  "module": "./dist/cli.js",
+  "types": "./dist/cli.d.ts",
+  "bin": {
+    "ai-sdk-agent-sdk-opencode-configurator": "./dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "rm -rf ./dist && bun build ./src/cli.tsx --target=node --format=esm --outdir ./dist --outfile ./dist/cli.js",
+    "test": "bun test",
+    "lint": "biome check . --write --unsafe"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zenyr/ai-sdk-agent-sdk.git",
+    "directory": "apps/opencode-configurator"
+  },
+  "homepage": "https://github.com/zenyr/ai-sdk-agent-sdk#readme",
+  "bugs": {
+    "url": "https://github.com/zenyr/ai-sdk-agent-sdk/issues"
+  },
+  "license": "MIT",
+  "type": "module",
+  "private": false,
+  "dependencies": {
+    "@opentui/core": "^0.1.86",
+    "@opentui/react": "^0.1.86",
+    "@zenyr/opencode-configurator-core": "workspace:*",
+    "react": "^19.2.0"
+  },
+  "devDependencies": {
+    "@types/bun": "~1.3.9",
+    "@types/react": "^19.2.2"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  }
+}

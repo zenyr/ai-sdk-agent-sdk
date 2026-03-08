@@ -1,57 +1,33 @@
-import { colors } from "../lib/theme";
-
 type PanelProps = {
   children: React.ReactNode;
   title?: string;
-  footer?: string;
   tone?: "default" | "accent" | "success" | "danger";
+  fill?: boolean;
 };
 
-const toneStyles = {
-  default: {
-    borderColor: colors.border,
-    backgroundColor: colors.panel,
-  },
-  accent: {
-    borderColor: colors.accent,
-    backgroundColor: colors.accentSoft,
-  },
-  success: {
-    borderColor: colors.success,
-    backgroundColor: colors.successSoft,
-  },
-  danger: {
-    borderColor: colors.danger,
-    backgroundColor: colors.dangerSoft,
-  },
-} as const;
-
-export const Panel = ({ children, title, footer, tone = "default" }: PanelProps) => {
-  const style = toneStyles[tone];
+export const Panel = ({ children, title, tone = "default", fill = false }: PanelProps) => {
+  const titlePrefix =
+    tone === "danger" ? "Error" : tone === "success" ? "Done" : tone === "accent" ? "Info" : undefined;
 
   return (
     <box
-      border
-      borderColor={style.borderColor}
-      backgroundColor={style.backgroundColor}
       style={{
         flexDirection: "column",
         paddingLeft: 1,
         paddingRight: 1,
         marginBottom: 1,
+        flexGrow: fill ? 1 : 0,
+        flexShrink: fill ? 1 : 0,
       }}
     >
       {title !== undefined ? (
         <box style={{ marginBottom: 1 }}>
-          <text>{title}</text>
+          <text>
+            {titlePrefix === undefined || title.startsWith(titlePrefix) ? title : `${titlePrefix} - ${title}`}
+          </text>
         </box>
       ) : null}
       {children}
-      {footer !== undefined ? (
-        <box style={{ marginTop: 1 }}>
-          <text>{footer}</text>
-        </box>
-      ) : null}
     </box>
   );
 };

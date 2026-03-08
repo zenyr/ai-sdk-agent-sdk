@@ -13,22 +13,33 @@ type ScopeScreenProps = {
   selectedIndex: number;
   width: number;
   onSelect(index: number): void;
+  onSubmit(index: number): void;
 };
 
-export const ScopeScreen = ({ options, selectedIndex, width, onSelect }: ScopeScreenProps) => {
+export const ScopeScreen = ({ options, selectedIndex, width, onSelect, onSubmit }: ScopeScreenProps) => {
   return (
-    <Panel title="Choose target scope" footer="Arrow keys move. Enter continues.">
+    <Panel fill={true}>
       {options.map((option, index) => (
         <ClickableBox
           key={option.value}
-          style={{ flexDirection: "column", marginBottom: 1 }}
-          backgroundColor={index === selectedIndex ? "cyan" : undefined}
-          onPress={() => onSelect(index)}
+          style={{ flexDirection: "column", marginBottom: 1, flexShrink: 0 }}
+          active={index === selectedIndex}
+          onPress={() => {
+            if (index === selectedIndex) {
+              onSubmit(index);
+              return;
+            }
+
+            onSelect(index);
+          }}
         >
-          <WrappedText
-            text={`${index === selectedIndex ? ">" : " "} ${option.label} - ${option.description}`}
-            width={width}
-          />
+          {({ hovered, active }) => (
+            <WrappedText
+              text={`${active ? ">" : " "} ${option.label} - ${option.description}`}
+              width={width}
+              color={hovered || active ? "white" : "gray"}
+            />
+          )}
         </ClickableBox>
       ))}
     </Panel>

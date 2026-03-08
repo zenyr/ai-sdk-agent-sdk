@@ -4,7 +4,6 @@ import {
   applyPreparedConfig,
   type ConfiguratorOptions,
   fetchAnthropicManifest,
-  getModelFamily,
   type Manifest,
   type PreparedConfig,
   prepareProviderConfig,
@@ -22,7 +21,7 @@ export const stepOrder: Step[] = ["scope", "path", "provider", "policy", "manual
 export const stepLabels: Record<Step, string> = {
   scope: "Choose scope",
   path: "Set file path",
-  provider: "Name provider",
+  provider: "Set provider",
   policy: "Choose policy",
   manual: "Pick models",
   preview: "Review changes",
@@ -103,7 +102,9 @@ export const useSetupFlow = ({ runtime, options, userAgent, onExit }: UseSetupFl
   const [manualCursor, setManualCursor] = useState(0);
   const [previewOffset, setPreviewOffset] = useState(0);
   const [targetPath, setTargetPath] = useState(options.targetPath ?? `${runtime.cwd()}/opencode.jsonc`);
+  const [providerId, setProviderId] = useState(options.providerId ?? defaults.providerId);
   const [providerName, setProviderName] = useState(options.providerName ?? defaults.providerName);
+  const [providerField, setProviderField] = useState<"name" | "id">("name");
   const [manifest, setManifest] = useState<Manifest | undefined>();
   const [manualModelIds, setManualModelIds] = useState<string[]>([]);
   const [preview, setPreview] = useState<PreparedConfig | undefined>();
@@ -166,7 +167,6 @@ export const useSetupFlow = ({ runtime, options, userAgent, onExit }: UseSetupFl
   const currentPolicy = policyOptions[policyIndex]?.value ?? "mainstream";
   const manualModels = manifest?.models ?? [];
   const textWidth = Math.max(28, (process.stdout.columns ?? 80) - 8);
-  const terminalRows = process.stdout.rows ?? 24;
   const isWide = textWidth >= 88;
   const infoColumnWidth = isWide ? Math.max(24, Math.floor((textWidth - 4) / 2)) : textWidth;
   const currentStepNumber = stepOrder.indexOf(step) >= 0 ? stepOrder.indexOf(step) + 1 : undefined;
@@ -174,6 +174,7 @@ export const useSetupFlow = ({ runtime, options, userAgent, onExit }: UseSetupFl
     `Scope: ${currentScope}`,
     `Path: ${currentScope === "path" ? targetPath : (options.targetPath ?? "auto-detect")}`,
     `Provider: ${providerName}`,
+    `Provider id: ${providerId}`,
     `Policy: ${currentPolicy}`,
   ];
 
@@ -195,18 +196,9 @@ export const useSetupFlow = ({ runtime, options, userAgent, onExit }: UseSetupFl
     };
   }, [manifest, manualModelIds.length]);
 
-  const manualVisibleCount = Math.max(6, terminalRows - 14);
-  const manualPageStart = clamp(
-    manualCursor - Math.floor(manualVisibleCount / 2),
-    0,
-    Math.max(0, manualModels.length - manualVisibleCount)
-  );
-  const visibleManualRows = manualModels.slice(manualPageStart, manualPageStart + manualVisibleCount).map(model => ({
+  const visibleManualRows = manualModels.map(model => ({
     id: model.id,
-    family: getModelFamily(model),
-    reasoning: model.reasoning,
-    status: model.status ?? (model.experimental === true ? "experimental" : "stable"),
-    output: model.limit.output,
+    name: model.name,
   }));
 
   const existingModelIds = useMemo(() => {
@@ -231,16 +223,7 @@ export const useSetupFlow = ({ runtime, options, userAgent, onExit }: UseSetupFl
             output: model?.limit.output ?? 0,
           });
         });
-  const previewVisibleCount = Math.max(4, terminalRows - (isWide ? 24 : 22));
-  const boundedPreviewOffset = clamp(previewOffset, 0, Math.max(0, allPreviewModelRows.length - previewVisibleCount));
-  const visiblePreviewModelRows = allPreviewModelRows.slice(
-    boundedPreviewOffset,
-    boundedPreviewOffset + previewVisibleCount
-  );
-  const hiddenPreviewModelCount = Math.max(
-    0,
-    allPreviewModelRows.length - (boundedPreviewOffset + visiblePreviewModelRows.length)
-  );
+  const visiblePreviewModelRows = allPreviewModelRows;
 
   const selectScope = (index: number) => {
     setScopeIndex(clamp(index, 0, scopeOptions.length - 1));
@@ -254,6 +237,7 @@ export const useSetupFlow = ({ runtime, options, userAgent, onExit }: UseSetupFl
         ...options,
         scope: currentScope,
         targetPath: currentScope === "path" ? targetPath : undefined,
+        providerId,
         providerName,
         policy,
         manualModelIds: policy === "manual" ? manualModelIds : undefined,
@@ -304,6 +288,14 @@ export const useSetupFlow = ({ runtime, options, userAgent, onExit }: UseSetupFl
     setStep("policy");
   };
 
+  const submitProviderName = () => {
+    setProviderField("id");
+  };
+
+  const submitProviderId = () => {
+    setStep("policy");
+  };
+
   const selectPolicy = (index: number) => {
     setPolicyIndex(clamp(index, 0, policyOptions.length - 1));
   };
@@ -335,6 +327,10 @@ export const useSetupFlow = ({ runtime, options, userAgent, onExit }: UseSetupFl
     void buildPreview("manual");
   };
 
+  const selectManualCursor = (index: number) => {
+    setManualCursor(clamp(index, 0, Math.max(manualModels.length - 1, 0)));
+  };
+
   const goBackFromPolicy = () => {
     setStep("provider");
   };
@@ -347,24 +343,43 @@ export const useSetupFlow = ({ runtime, options, userAgent, onExit }: UseSetupFl
     setStep(currentPolicy === "manual" ? "manual" : "policy");
   };
 
-  const scrollPreview = (delta: number) => {
-    setPreviewOffset(current =>
-      clamp(current + delta, 0, Math.max(allPreviewModelRows.length - previewVisibleCount, 0))
-    );
-  };
-
-  useKeyboard(key => {
-    if (key.ctrl && key.name === "c") {
-      onExit(1);
+  const handleEscape = () => {
+    if (step === "preview") {
+      goBackFromPreview();
       return;
     }
 
+    if (step === "manual") {
+      goBackFromManual();
+      return;
+    }
+
+    if (step === "policy") {
+      goBackFromPolicy();
+      return;
+    }
+
+    if (step === "provider") {
+      setStep(currentScope === "path" ? "path" : "scope");
+      return;
+    }
+
+    if (step === "path") {
+      setStep("scope");
+    }
+  };
+
+  const scrollPreview = (delta: number) => {
+    setPreviewOffset(current => Math.max(current + delta, 0));
+  };
+
+  useKeyboard(key => {
     if (busyLabel.length > 0) {
       return;
     }
 
     if (key.name === "escape") {
-      onExit(0);
+      handleEscape();
       return;
     }
 
@@ -405,8 +420,12 @@ export const useSetupFlow = ({ runtime, options, userAgent, onExit }: UseSetupFl
     }
 
     if (step === "provider") {
-      if (key.name === "backspace") {
-        setStep(currentScope === "path" ? "path" : "scope");
+      if (key.name === "tab" || key.name === "down") {
+        setProviderField(current => (current === "name" ? "id" : "name"));
+      }
+
+      if (key.name === "up") {
+        setProviderField(current => (current === "id" ? "name" : "id"));
       }
 
       return;
@@ -476,9 +495,13 @@ export const useSetupFlow = ({ runtime, options, userAgent, onExit }: UseSetupFl
     scopeIndex,
     policyIndex,
     targetPath,
+    providerId,
     providerName,
+    providerField,
     setTargetPath,
+    setProviderId,
     setProviderName,
+    setProviderField,
     manualCursor,
     preview,
     busyLabel,
@@ -491,20 +514,24 @@ export const useSetupFlow = ({ runtime, options, userAgent, onExit }: UseSetupFl
     policyModelCounts,
     visibleManualRows,
     manualModelIds,
-    manualPageStart,
     manualModelCount: manualModels.length,
     addedModelIds,
     removedModelIds,
     visiblePreviewModelRows,
-    hiddenPreviewModelCount,
+    previewOffset,
+    setPreviewOffset,
     selectScope,
     submitScope,
     submitPath,
     submitProvider,
+    submitProviderName,
+    submitProviderId,
     selectPolicy,
     submitPolicy,
+    selectManualCursor,
     toggleManualSelection,
     submitManual,
+    handleEscape,
     goBackFromPreview,
     applyPreview,
     stepLabel: stepLabels[step],
