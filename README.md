@@ -116,6 +116,13 @@ const provider = createAnthropic({
 
 Use the root entry when you need OpenCode-oriented compatibility behavior. Use `ai-sdk-agent-sdk/core` when you want the clean provider surface directly.
 
+## Development workflow
+
+- Git hooks are managed by Lefthook (`bun install` runs `prepare` and installs hooks).
+- `pre-commit` runs Biome on staged files.
+- `commit-msg` enforces Conventional Commits via commitlint.
+- Biome is configured for a compact style (`lineWidth: 120`, `arrowParentheses: asNeeded`).
+
 ## Changelog
 
 [packages/main/CHANGELOG.md](./packages/main/CHANGELOG.md)
