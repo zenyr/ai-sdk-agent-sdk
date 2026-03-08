@@ -118,6 +118,7 @@ export const runGenerate = async (args: {
     latestStopReason: null,
     latestUsage: undefined,
   };
+  const bufferedToolModeText: string[] = [];
   const pendingBridgeToolInputs: PendingBridgeToolInputs = new Map();
   const recoveredToolCallsFromStream: LanguageModelV3Content[] = [];
   let runtimeQueryError: { message: string; raw: string } | undefined;
@@ -171,6 +172,12 @@ export const runGenerate = async (args: {
             if (toolCall !== undefined) {
               appendRecoveredToolCall(toolCall);
             }
+
+            continue;
+          }
+
+          if (completionMode.type === "tools" && !useNativeToolExecution && mappedPart.type === "text-delta") {
+            bufferedToolModeText.push(mappedPart.delta);
           }
         }
 
@@ -313,6 +320,7 @@ export const runGenerate = async (args: {
 
   const usage = mapUsage(finalResultMessage);
   const providerMetadata = buildProviderMetadata(finalResultMessage);
+  const bufferedText = bufferedToolModeText.join("");
 
   let content: LanguageModelV3Content[] = [];
   let finishReason = mapFinishReason(finalResultMessage.stop_reason);
@@ -367,6 +375,16 @@ export const runGenerate = async (args: {
             idGenerator: args.idGenerator,
           })
         : undefined;
+    const bufferedTextResolution =
+      completionMode.type === "tools" &&
+      (structuredOutputResolution === undefined ||
+        (structuredOutputResolution.toolCalls.length === 0 && structuredOutputResolution.text === undefined)) &&
+      bufferedText.length > 0
+        ? resolveToolModeEnvelopeFromText({
+            text: bufferedText,
+            idGenerator: args.idGenerator,
+          })
+        : undefined;
 
     if (completionMode.type === "tools" && structuredOutputResolution !== undefined) {
       if (structuredOutputResolution.toolCalls.length > 0) {
@@ -376,6 +394,14 @@ export const runGenerate = async (args: {
           raw: "tool_use",
         };
       }
+    }
+
+    if (content.length === 0 && completionMode.type === "tools" && bufferedTextResolution?.toolCalls.length) {
+      content = bufferedTextResolution.toolCalls;
+      finishReason = {
+        unified: "tool-calls",
+        raw: "tool_use",
+      };
     }
 
     if (content.length === 0 && completionMode.type === "tools" && recoveredToolCallsFromStream.length > 0) {
@@ -404,6 +430,10 @@ export const runGenerate = async (args: {
 
     if (content.length === 0 && completionMode.type === "tools" && structuredOutputResolution?.text !== undefined) {
       content = [{ type: "text", text: structuredOutputResolution.text }];
+    }
+
+    if (content.length === 0 && completionMode.type === "tools" && bufferedTextResolution?.text !== undefined) {
+      content = [{ type: "text", text: bufferedTextResolution.text }];
     }
 
     if (content.length === 0 && completionMode.type === "json") {
@@ -438,6 +468,10 @@ export const runGenerate = async (args: {
           content = [{ type: "text", text: assistantText }];
         }
       }
+    }
+
+    if (content.length === 0 && completionMode.type === "tools" && bufferedText.length > 0) {
+      content = [{ type: "text", text: bufferedText }];
     }
 
     if (content.length === 0) {

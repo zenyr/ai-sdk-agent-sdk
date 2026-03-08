@@ -659,6 +659,104 @@ describe("provider settings contract", () => {
     expect(firstContentPart.text).toContain("Tool routing finished without a final text response");
   });
 
+  test("tool mode surfaces plain fallback text for successful provider fallback", async () => {
+    const queryCalls: unknown[] = [];
+    const { createAnthropic } = await importIndexWithMockedQuery({
+      queryCalls,
+      messagesFactory: () => {
+        return [
+          {
+            type: "stream_event",
+            event: {
+              type: "message_start",
+              message: {
+                id: "msg-fallback-generate",
+                model: "mock-model",
+              },
+            },
+          },
+          {
+            type: "stream_event",
+            event: {
+              type: "content_block_start",
+              index: 0,
+              content_block: {
+                type: "text",
+                text: "",
+              },
+            },
+          },
+          {
+            type: "stream_event",
+            event: {
+              type: "content_block_delta",
+              index: 0,
+              delta: {
+                type: "text_delta",
+                text: "죄송합니다, 외부 도구가 비활성화되어 있어 실시간 정보를 가져올 수 없습니다.",
+              },
+            },
+          },
+          {
+            type: "stream_event",
+            event: {
+              type: "content_block_stop",
+              index: 0,
+            },
+          },
+          {
+            type: "result",
+            subtype: "success",
+            stop_reason: "end_turn",
+            result: "",
+            usage: buildMockResultUsage(),
+          },
+        ];
+      },
+    });
+
+    const provider = createAnthropic({});
+    const model = provider("claude-3-5-haiku-latest");
+
+    const result = await model.doGenerate({
+      prompt: [
+        {
+          role: "user",
+          content: [{ type: "text", text: "서울 날씨 어때?" }],
+        },
+      ],
+      tools: [
+        {
+          type: "function",
+          name: "websearch",
+          description: "Search web",
+          inputSchema: {
+            type: "object",
+            additionalProperties: false,
+            required: ["query"],
+            properties: {
+              query: {
+                type: "string",
+              },
+            },
+          },
+        },
+      ],
+      toolChoice: { type: "required" },
+    });
+
+    expect(result.finishReason.unified).toBe("stop");
+
+    const firstContentPart = result.content[0];
+    expect(firstContentPart?.type).toBe("text");
+
+    if (firstContentPart === undefined || firstContentPart.type !== "text") {
+      return;
+    }
+
+    expect(firstContentPart.text).toContain("외부 도구가 비활성화되어 있어");
+  });
+
   test("tool mode recovers native MCP tool-use from error_max_turns", async () => {
     const queryCalls: unknown[] = [];
     const { createAnthropic } = await importIndexWithMockedQuery({
