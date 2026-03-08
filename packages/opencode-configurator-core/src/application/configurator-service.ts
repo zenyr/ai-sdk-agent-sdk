@@ -1,6 +1,12 @@
 import { buildProviderBlock } from "../domain/provider-block";
 import { selectManifestModels } from "../domain/selection-policy";
-import type { ConfiguratorOptions, PreparedConfig, PreparedRemoval, StatusResult } from "../domain/types";
+import type {
+  ConfiguratorOptions,
+  PreparedConfig,
+  PreparedRemoval,
+  ProviderConfig,
+  StatusResult,
+} from "../domain/types";
 import type { Runtime } from "../ports/runtime";
 import { fetchAnthropicManifest } from "./models-dev";
 import { resolveConfiguratorOptions } from "./options";
@@ -9,6 +15,8 @@ import {
   ensureConfigParentDirectory,
   listManagedProviders,
   readConfigDocument,
+  readProviderNpm,
+  readProviderRecord,
   removeProviderBlockFromDocument,
   resolveConfigTarget,
 } from "./provider-discovery";
@@ -24,13 +32,24 @@ export const prepareProviderConfig = async (
     targetPath: options.targetPath,
   });
   const currentText = await readConfigDocument(runtime, target);
+  const providerNpm =
+    rawOptions.providerNpm ??
+    readProviderNpm(currentText, {
+      containerKey: target.containerKey,
+      providerId: options.providerId,
+    }) ??
+    options.providerNpm;
+  const existingProviderRecord = readProviderRecord(currentText, {
+    containerKey: target.containerKey,
+    providerId: options.providerId,
+  });
   const manifest = await fetchAnthropicManifest(runtime, {
     url: options.modelsUrl,
     userAgent: options.userAgent,
     providerDefaults: {
       id: options.providerId,
       name: options.providerName,
-      npm: options.providerNpm,
+      npm: providerNpm,
       env: options.envVars,
     },
   });
@@ -40,14 +59,36 @@ export const prepareProviderConfig = async (
     throw new Error(`no models selected for policy ${options.policy}`);
   }
 
-  const providerBlock = buildProviderBlock({
+  const managedProviderBlock = buildProviderBlock({
     manifest,
     selectedModels,
     providerName: options.providerName,
-    providerNpm: options.providerNpm,
+    providerNpm,
     envVars: options.envVars,
     includeNoneVariant: options.includeNoneVariant,
   });
+  const providerBlock: ProviderConfig & Record<string, unknown> = {
+    ...existingProviderRecord,
+    ...managedProviderBlock,
+    options: {
+      ...(existingProviderRecord?.options && typeof existingProviderRecord.options === "object"
+        ? existingProviderRecord.options
+        : {}),
+      experimental_agentSdk:
+        existingProviderRecord?.options &&
+        typeof existingProviderRecord.options === "object" &&
+        "experimental_agentSdk" in existingProviderRecord.options &&
+        existingProviderRecord.options.experimental_agentSdk &&
+        typeof existingProviderRecord.options.experimental_agentSdk === "object"
+          ? existingProviderRecord.options.experimental_agentSdk
+          : existingProviderRecord?.experimental_agentSdk &&
+              typeof existingProviderRecord.experimental_agentSdk === "object"
+            ? existingProviderRecord.experimental_agentSdk
+            : {},
+      setCacheKey: true,
+    },
+  };
+  delete providerBlock.experimental_agentSdk;
   const nextText = applyProviderBlockToDocument(currentText, target.containerKey, options.providerId, providerBlock);
 
   return {

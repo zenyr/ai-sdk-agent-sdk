@@ -15,15 +15,21 @@ const isUnsupportedFeatureWarning = (
 
 describe("collectAnthropicProviderOptionWarnings", () => {
   test("returns empty when provider options are missing", () => {
-    const warnings = collectAnthropicProviderOptionWarnings(undefined);
+    const warnings = collectAnthropicProviderOptionWarnings({
+      providerOptions: undefined,
+      provider: "anthropic.messages",
+    });
     expect(warnings).toEqual([]);
   });
 
   test("does not warn for mapped options", () => {
     const warnings = collectAnthropicProviderOptionWarnings({
-      anthropic: {
-        effort: "low",
-        thinking: { type: "enabled", budgetTokens: 1024 },
+      provider: "anthropic.messages",
+      providerOptions: {
+        anthropic: {
+          effort: "low",
+          thinking: { type: "enabled", budgetTokens: 1024 },
+        },
       },
     });
 
@@ -32,10 +38,13 @@ describe("collectAnthropicProviderOptionWarnings", () => {
 
   test("warns for degraded, unsupported, and unknown options", () => {
     const warnings = collectAnthropicProviderOptionWarnings({
-      anthropic: {
-        sendReasoning: true,
-        cacheControl: { type: "ephemeral" },
-        unknownOption: true,
+      provider: "my-agent",
+      providerOptions: {
+        "my-agent": {
+          sendReasoning: true,
+          cacheControl: { type: "ephemeral" },
+          unknownOption: true,
+        },
       },
     });
 
@@ -46,11 +55,11 @@ describe("collectAnthropicProviderOptionWarnings", () => {
       .map(warning => warning.feature)
       .sort();
 
-    expect(features).toEqual(["providerOptions.anthropic.cacheControl", "providerOptions.anthropic.sendReasoning"]);
+    expect(features).toEqual(["providerOptions.my-agent.cacheControl", "providerOptions.my-agent.sendReasoning"]);
 
     const cacheControlWarning = warnings.find(
       (warning): warning is Extract<SharedV3Warning, { type: "unsupported"; feature: string }> => {
-        return isUnsupportedFeatureWarning(warning) && warning.feature === "providerOptions.anthropic.cacheControl";
+        return isUnsupportedFeatureWarning(warning) && warning.feature === "providerOptions.my-agent.cacheControl";
       }
     );
 

@@ -166,6 +166,7 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
   async doGenerate(options: LanguageModelV3CallOptions): Promise<LanguageModelV3GenerateResult> {
     return runGenerate({
       options,
+      provider: this.provider,
       modelId: this.modelId,
       settings: this.settings,
       idGenerator: this.idGenerator,
@@ -187,6 +188,7 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
   async doStream(options: LanguageModelV3CallOptions): Promise<LanguageModelV3StreamResult> {
     return runStream({
       options,
+      provider: this.provider,
       modelId: this.modelId,
       settings: this.settings,
       idGenerator: this.idGenerator,

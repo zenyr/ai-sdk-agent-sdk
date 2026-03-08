@@ -7,10 +7,18 @@ export type SelectionPolicy = "mainstream" | "all-stable" | "latest-per-family" 
 export type ModelsSourceKind = "models.dev";
 
 export type ThinkingVariant = {
-  thinking: {
-    type: "enabled" | "disabled";
-    budgetTokens?: number;
-  };
+  thinking:
+    | {
+        type: "adaptive";
+      }
+    | {
+        type: "enabled";
+        budgetTokens?: number;
+      }
+    | {
+        type: "disabled";
+      };
+  effort?: "low" | "medium" | "high" | "max";
 };
 
 export type ManifestModel = {

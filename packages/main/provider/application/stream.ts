@@ -54,6 +54,7 @@ import { persistQuerySessionState } from "./session-persistence";
 
 export const runStream = async (args: {
   options: LanguageModelV3CallOptions;
+  provider: string;
   modelId: string;
   settings: AgentSdkProviderSettings;
   idGenerator: () => string;
@@ -83,6 +84,7 @@ export const runStream = async (args: {
     thinking,
   } = await prepareQueryContext({
     options: args.options,
+    provider: args.provider,
     providerSettingWarnings: args.providerSettingWarnings,
     previousSessionStates: args.previousSessionStates,
     previousIncomingSessionStates: args.previousIncomingSessionStates,

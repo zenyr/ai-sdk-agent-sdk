@@ -219,6 +219,34 @@ const getProviderContainer = (parsed: unknown, containerKey: ConfigContainerKey)
   return isRecord(container) ? container : undefined;
 };
 
+export const readProviderNpm = (text: string, input: { containerKey: ConfigContainerKey; providerId: string }) => {
+  const parsed = parseConfigDocument(text);
+  const container = getProviderContainer(parsed, input.containerKey);
+
+  if (container === undefined) {
+    return undefined;
+  }
+
+  const provider = container[input.providerId];
+  if (!isRecord(provider)) {
+    return undefined;
+  }
+
+  return typeof provider.npm === "string" ? provider.npm : undefined;
+};
+
+export const readProviderRecord = (text: string, input: { containerKey: ConfigContainerKey; providerId: string }) => {
+  const parsed = parseConfigDocument(text);
+  const container = getProviderContainer(parsed, input.containerKey);
+
+  if (container === undefined) {
+    return undefined;
+  }
+
+  const provider = container[input.providerId];
+  return isRecord(provider) ? provider : undefined;
+};
+
 export const listManagedProviders = (
   text: string,
   input: {

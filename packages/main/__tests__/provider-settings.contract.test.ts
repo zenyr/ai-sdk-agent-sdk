@@ -542,6 +542,65 @@ describe("provider settings contract", () => {
     expect(options.thinking.type).toBe("adaptive");
   });
 
+  test("tool mode reads thinking and effort from dynamic provider key", async () => {
+    const queryCalls: unknown[] = [];
+    const { createAnthropic } = await importIndexWithMockedQuery({ queryCalls });
+
+    const provider = createAnthropic({ name: "my-agent" });
+    const model = provider("claude-3-5-haiku-latest");
+
+    await model.doGenerate({
+      prompt: [
+        {
+          role: "user",
+          content: [{ type: "text", text: "Call tool when needed." }],
+        },
+      ],
+      tools: [
+        {
+          type: "function",
+          name: "lookup_weather",
+          description: "Lookup weather",
+          inputSchema: {
+            type: "object",
+            additionalProperties: false,
+            required: ["city"],
+            properties: {
+              city: {
+                type: "string",
+              },
+            },
+          },
+        },
+      ],
+      toolChoice: { type: "required" },
+      providerOptions: {
+        "my-agent": {
+          thinking: {
+            type: "adaptive",
+          },
+          effort: "medium",
+        },
+      },
+    });
+
+    const options = readOptionsFromFirstQueryCall(queryCalls);
+    expect(options).toBeDefined();
+
+    if (options === undefined) {
+      return;
+    }
+
+    expect(isRecord(options.thinking)).toBeTrue();
+
+    if (!isRecord(options.thinking)) {
+      return;
+    }
+
+    expect(options.thinking.type).toBe("adaptive");
+    expect(options.effort).toBe("medium");
+  });
+
   test("tool mode returns explicit error for empty successful output", async () => {
     const queryCalls: unknown[] = [];
     const { createAnthropic } = await importIndexWithMockedQuery({

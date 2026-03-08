@@ -5,13 +5,16 @@ import { isFunctionTool, isRecord, safeJsonStringify } from "../shared/type-read
 export type CompletionMode =
   | {
       type: "plain-text";
+      provider: string;
     }
   | {
       type: "json";
+      provider: string;
       schema: Record<string, unknown>;
     }
   | {
       type: "tools";
+      provider: string;
       schema: Record<string, unknown>;
       tools: LanguageModelV3FunctionTool[];
     };
@@ -98,13 +101,18 @@ export const buildToolSchema = (
   };
 };
 
-export const buildCompletionMode = (options: LanguageModelV3CallOptions): CompletionMode => {
+export const buildCompletionMode = (args: {
+  options: LanguageModelV3CallOptions;
+  provider: string;
+}): CompletionMode => {
+  const options = args.options;
   const tools = options.tools?.filter(isFunctionTool) ?? [];
   const hasToolMode = tools.length > 0 && options.toolChoice?.type !== "none";
 
   if (hasToolMode) {
     return {
       type: "tools",
+      provider: args.provider,
       schema: buildToolSchema(tools, options.toolChoice),
       tools,
     };
@@ -115,11 +123,13 @@ export const buildCompletionMode = (options: LanguageModelV3CallOptions): Comple
 
     return {
       type: "json",
+      provider: args.provider,
       schema,
     };
   }
 
   return {
     type: "plain-text",
+    provider: args.provider,
   };
 };

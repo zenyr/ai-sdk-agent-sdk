@@ -81,6 +81,158 @@ describe("configurator service", () => {
     expect(text?.includes('"claude-sonnet-4-6"')).toBeTrue();
   });
 
+  test("preserves existing custom npm when provider id matches", async () => {
+    const { runtime } = createMemoryRuntime({
+      env: {
+        XDG_CONFIG_HOME: "/xdg",
+      },
+      files: {
+        "/xdg/opencode/opencode.jsonc":
+          '{"provider":{"agent-sdk":{"npm":"file:///tmp/custom-agent-sdk.js","models":{"claude-haiku-4-5":{}}}}}',
+      },
+      fetchText: modelsPayload,
+    });
+
+    const prepared = await prepareProviderConfig(runtime, {
+      scope: "global",
+      userAgent: "test/1.0.0",
+    });
+
+    expect(prepared.providerBlock.npm).toBe("file:///tmp/custom-agent-sdk.js");
+    expect(prepared.nextText.includes('"npm": "file:///tmp/custom-agent-sdk.js"')).toBeTrue();
+  });
+
+  test("preserves existing provider options", async () => {
+    const { runtime } = createMemoryRuntime({
+      env: {
+        XDG_CONFIG_HOME: "/xdg",
+      },
+      files: {
+        "/xdg/opencode/opencode.jsonc":
+          '{"provider":{"agent-sdk":{"npm":"file:///tmp/custom-agent-sdk.js","options":{"setCacheKey":true,"baseURL":"https://proxy.example.test/api"},"models":{"claude-haiku-4-5":{}}}}}',
+      },
+      fetchText: modelsPayload,
+    });
+
+    const prepared = await prepareProviderConfig(runtime, {
+      scope: "global",
+      userAgent: "test/1.0.0",
+    });
+
+    expect(prepared.nextText.includes('"setCacheKey": true')).toBeTrue();
+    expect(prepared.nextText.includes('"baseURL": "https://proxy.example.test/api"')).toBeTrue();
+    expect(prepared.nextText.includes('"npm": "file:///tmp/custom-agent-sdk.js"')).toBeTrue();
+  });
+
+  test("forces setCacheKey true while preserving baseURL", async () => {
+    const { runtime } = createMemoryRuntime({
+      env: {
+        XDG_CONFIG_HOME: "/xdg",
+      },
+      files: {
+        "/xdg/opencode/opencode.jsonc":
+          '{"provider":{"agent-sdk":{"options":{"setCacheKey":false,"baseURL":"https://proxy.example.test/api"},"models":{"claude-haiku-4-5":{}}}}}',
+      },
+      fetchText: modelsPayload,
+    });
+
+    const prepared = await prepareProviderConfig(runtime, {
+      scope: "global",
+      userAgent: "test/1.0.0",
+    });
+
+    expect(prepared.nextText.includes('"setCacheKey": true')).toBeTrue();
+    expect(prepared.nextText.includes('"setCacheKey": false')).toBeFalse();
+    expect(prepared.nextText.includes('"baseURL": "https://proxy.example.test/api"')).toBeTrue();
+  });
+
+  test("adds empty options.experimental_agentSdk block", async () => {
+    const { runtime } = createMemoryRuntime({
+      env: {
+        XDG_CONFIG_HOME: "/xdg",
+      },
+      files: {
+        "/xdg/opencode/opencode.jsonc": '{"provider":{"agent-sdk":{"models":{"claude-haiku-4-5":{}}}}}',
+      },
+      fetchText: modelsPayload,
+    });
+
+    const prepared = await prepareProviderConfig(runtime, {
+      scope: "global",
+      userAgent: "test/1.0.0",
+    });
+
+    expect(prepared.nextText.includes('"options": {')).toBeTrue();
+    expect(prepared.nextText.includes('"experimental_agentSdk": {}')).toBeTrue();
+  });
+
+  test("moves existing top-level experimental_agentSdk under options", async () => {
+    const { runtime } = createMemoryRuntime({
+      env: {
+        XDG_CONFIG_HOME: "/xdg",
+      },
+      files: {
+        "/xdg/opencode/opencode.jsonc":
+          '{"provider":{"agent-sdk":{"experimental_agentSdk":{"cwd":"/tmp/agent","debug":true},"models":{"claude-haiku-4-5":{}}}}}',
+      },
+      fetchText: modelsPayload,
+    });
+
+    const prepared = await prepareProviderConfig(runtime, {
+      scope: "global",
+      userAgent: "test/1.0.0",
+    });
+
+    expect(prepared.nextText.includes('"options": {')).toBeTrue();
+    expect(prepared.nextText.includes('"experimental_agentSdk": {')).toBeTrue();
+    expect(prepared.nextText.includes('"cwd": "/tmp/agent"')).toBeTrue();
+    expect(prepared.nextText.includes('"debug": true')).toBeTrue();
+    expect(prepared.nextText.includes('},"experimental_agentSdk"')).toBeFalse();
+  });
+
+  test("preserves existing nested options.experimental_agentSdk config", async () => {
+    const { runtime } = createMemoryRuntime({
+      env: {
+        XDG_CONFIG_HOME: "/xdg",
+      },
+      files: {
+        "/xdg/opencode/opencode.jsonc":
+          '{"provider":{"agent-sdk":{"options":{"experimental_agentSdk":{"cwd":"/tmp/nested","debug":true}},"models":{"claude-haiku-4-5":{}}}}}',
+      },
+      fetchText: modelsPayload,
+    });
+
+    const prepared = await prepareProviderConfig(runtime, {
+      scope: "global",
+      userAgent: "test/1.0.0",
+    });
+
+    expect(prepared.nextText.includes('"experimental_agentSdk": {')).toBeTrue();
+    expect(prepared.nextText.includes('"cwd": "/tmp/nested"')).toBeTrue();
+    expect(prepared.nextText.includes('"debug": true')).toBeTrue();
+  });
+
+  test("explicit providerNpm still overrides existing custom npm", async () => {
+    const { runtime } = createMemoryRuntime({
+      env: {
+        XDG_CONFIG_HOME: "/xdg",
+      },
+      files: {
+        "/xdg/opencode/opencode.jsonc":
+          '{"provider":{"agent-sdk":{"npm":"file:///tmp/custom-agent-sdk.js","models":{"claude-haiku-4-5":{}}}}}',
+      },
+      fetchText: modelsPayload,
+    });
+
+    const prepared = await prepareProviderConfig(runtime, {
+      scope: "global",
+      userAgent: "test/1.0.0",
+      providerNpm: "ai-sdk-agent-sdk",
+    });
+
+    expect(prepared.providerBlock.npm).toBe("ai-sdk-agent-sdk");
+  });
+
   test("status finds provider by npm when id changed", async () => {
     const { runtime } = createMemoryRuntime({
       env: {

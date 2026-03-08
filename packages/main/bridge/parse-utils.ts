@@ -21,13 +21,30 @@ type ParsedAnthropicProviderOptions = {
   thinking?: { type: "adaptive" } | { type: "disabled" } | { type: "enabled"; budgetTokens?: number };
 };
 
-export const parseAnthropicProviderOptions = (options: LanguageModelV3CallOptions): ParsedAnthropicProviderOptions => {
-  const providerOptions = options.providerOptions;
-  if (!isRecord(providerOptions)) {
-    return {};
+export const resolveAnthropicProviderOptions = (args: {
+  providerOptions: LanguageModelV3CallOptions["providerOptions"];
+  provider: string;
+}) => {
+  if (!isRecord(args.providerOptions)) {
+    return undefined;
   }
 
-  const anthropicOptions = readRecord(providerOptions, "anthropic");
+  const scopedOptions = readRecord(args.providerOptions, args.provider);
+  if (scopedOptions !== undefined) {
+    return scopedOptions;
+  }
+
+  return readRecord(args.providerOptions, "anthropic");
+};
+
+export const parseAnthropicProviderOptions = (args: {
+  options: LanguageModelV3CallOptions;
+  provider: string;
+}): ParsedAnthropicProviderOptions => {
+  const anthropicOptions = resolveAnthropicProviderOptions({
+    providerOptions: args.options.providerOptions,
+    provider: args.provider,
+  });
   if (anthropicOptions === undefined) {
     return {};
   }
@@ -73,7 +90,10 @@ export const parseAnthropicProviderOptions = (options: LanguageModelV3CallOption
 };
 
 export const collectWarnings = (options: LanguageModelV3CallOptions, mode: CompletionMode): SharedV3Warning[] => {
-  const warnings: SharedV3Warning[] = collectAnthropicProviderOptionWarnings(options.providerOptions);
+  const warnings: SharedV3Warning[] = collectAnthropicProviderOptionWarnings({
+    providerOptions: options.providerOptions,
+    provider: mode.provider,
+  });
 
   if (typeof options.temperature === "number") {
     warnings.push({

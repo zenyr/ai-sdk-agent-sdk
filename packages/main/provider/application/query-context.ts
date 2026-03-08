@@ -30,6 +30,7 @@ export type QueryContext = {
 
 export const prepareQueryContext = async (args: {
   options: LanguageModelV3CallOptions;
+  provider: string;
   providerSettingWarnings: SharedV3Warning[];
   previousSessionStates: () => PromptSessionState[];
   previousIncomingSessionStates: () => IncomingSessionState[];
@@ -39,8 +40,14 @@ export const prepareQueryContext = async (args: {
   ) => ToolBridgeConfig | undefined;
   buildPartialToolExecutorWarning: (missingExecutorToolNames: string[]) => SharedV3Warning;
 }): Promise<QueryContext> => {
-  const completionMode = buildCompletionMode(args.options);
-  const anthropicOptions = parseAnthropicProviderOptions(args.options);
+  const completionMode = buildCompletionMode({
+    options: args.options,
+    provider: args.provider,
+  });
+  const anthropicOptions = parseAnthropicProviderOptions({
+    options: args.options,
+    provider: args.provider,
+  });
   const warnings = [...collectWarnings(args.options, completionMode), ...args.providerSettingWarnings];
 
   const incomingSessionKey = readIncomingSessionKey(args.options);

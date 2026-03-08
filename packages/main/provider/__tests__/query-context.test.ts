@@ -62,6 +62,7 @@ describe("query-context", () => {
           "x-conversation-id": "conversation-1",
         },
       },
+      provider: "anthropic.messages",
       providerSettingWarnings: [],
       previousSessionStates: () => [],
       previousIncomingSessionStates: () => [previousIncomingSessionState],
@@ -100,6 +101,7 @@ describe("query-context", () => {
           },
         },
       },
+      provider: "anthropic.messages",
       providerSettingWarnings: [],
       previousSessionStates: () => [],
       previousIncomingSessionStates: () => [],
@@ -130,6 +132,7 @@ describe("query-context", () => {
         tools: [weatherTool],
         toolChoice: { type: "required" },
       },
+      provider: "anthropic.messages",
       providerSettingWarnings: [],
       previousSessionStates: () => [],
       previousIncomingSessionStates: () => [],
@@ -165,6 +168,7 @@ describe("query-context", () => {
         tools: [weatherTool],
         toolChoice: { type: "required" },
       },
+      provider: "anthropic.messages",
       providerSettingWarnings: [],
       previousSessionStates: () => [],
       previousIncomingSessionStates: () => [],
@@ -210,6 +214,7 @@ describe("query-context", () => {
           },
         ],
       },
+      provider: "anthropic.messages",
       providerSettingWarnings: [],
       previousSessionStates: () => [],
       previousIncomingSessionStates: () => [],
@@ -232,5 +237,33 @@ describe("query-context", () => {
     expect(abortController.signal.aborted).toBeTrue();
 
     cleanupAbortListener();
+  });
+
+  test("reads anthropic provider options from dynamic provider key", async () => {
+    const queryContext = await prepareQueryContext({
+      options: {
+        prompt: [userMessage("hello")],
+        providerOptions: {
+          "my-agent": {
+            thinking: {
+              type: "adaptive",
+            },
+            effort: "low",
+          },
+        },
+      },
+      provider: "my-agent",
+      providerSettingWarnings: [],
+      previousSessionStates: () => [],
+      previousIncomingSessionStates: () => [],
+      hydrateIncomingSessionState: async () => {},
+      buildToolBridgeConfig: () => {
+        return undefined;
+      },
+      buildPartialToolExecutorWarning: () => partialExecutorWarning,
+    });
+
+    expect(queryContext.thinking).toEqual({ type: "adaptive" });
+    expect(queryContext.effort).toBe("low");
   });
 });
