@@ -10,7 +10,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> => {
 };
 
 describe("package export contract", () => {
-  test("package exports root, core, v2, and bun entries", async () => {
+  test("package exports root, v2, v3, and bun entries", async () => {
     const packageJson = await readPackageJson();
     const exportsField = packageJson.exports;
 
@@ -21,13 +21,14 @@ describe("package export contract", () => {
     }
 
     expect("." in exportsField).toBeTrue();
-    expect("./core" in exportsField).toBeTrue();
     expect("./v2" in exportsField).toBeTrue();
+    expect("./v3" in exportsField).toBeTrue();
     expect("./bun" in exportsField).toBeTrue();
+    expect("./core" in exportsField).toBeFalse();
     expect("./opencode" in exportsField).toBeFalse();
   });
 
-  test("package files and build script include core entry", async () => {
+  test("package files and build script include v3 entry", async () => {
     const packageJson = await readPackageJson();
     const files = packageJson.files;
     const scripts = packageJson.scripts;
@@ -39,7 +40,8 @@ describe("package export contract", () => {
       return;
     }
 
-    expect(files.includes("core.ts")).toBeTrue();
+    expect(files.includes("v3.ts")).toBeTrue();
+    expect(files.includes("core.ts")).toBeFalse();
 
     const buildScript = scripts.build;
     expect(typeof buildScript).toBe("string");
@@ -48,7 +50,8 @@ describe("package export contract", () => {
       return;
     }
 
-    expect(buildScript.includes("./core.ts")).toBeTrue();
+    expect(buildScript.includes("./v3.ts")).toBeTrue();
+    expect(buildScript.includes("./core.ts")).toBeFalse();
     expect(buildScript.includes("./opencode.ts")).toBeFalse();
   });
 });

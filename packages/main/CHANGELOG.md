@@ -5,7 +5,7 @@
 ### Notes
 
 - Package root `ai-sdk-agent-sdk` remains the compatibility entry for OpenCode-oriented consumers.
-- Pure provider behavior is available from `ai-sdk-agent-sdk/core`.
+- Pure provider behavior is available from `ai-sdk-agent-sdk/v3`.
 
 ## 0.0.5-rc.0
 

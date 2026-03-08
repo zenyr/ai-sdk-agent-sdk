@@ -4,8 +4,8 @@ afterEach(() => {
   mock.restore();
 });
 
-const loadCoreModule = async () => {
-  const moduleId = `../core.ts?core-contract-${Date.now()}-${Math.random()}`;
+const loadV3Module = async () => {
+  const moduleId = `../v3.ts?v3-contract-${Date.now()}-${Math.random()}`;
   return await import(moduleId);
 };
 
@@ -18,9 +18,9 @@ const buildMockResultUsage = () => {
   };
 };
 
-describe("core entry contract", () => {
-  test("core exports pure provider entrypoints", async () => {
-    const { VERSION, anthropic, createAnthropic, forwardAnthropicContainerIdFromLastStep } = await loadCoreModule();
+describe("v3 entry contract", () => {
+  test("v3 exports pure provider entrypoints", async () => {
+    const { VERSION, anthropic, createAnthropic, forwardAnthropicContainerIdFromLastStep } = await loadV3Module();
 
     expect(typeof VERSION).toBe("string");
     expect(typeof anthropic).toBe("function");
@@ -28,7 +28,7 @@ describe("core entry contract", () => {
     expect(typeof forwardAnthropicContainerIdFromLastStep).toBe("function");
   });
 
-  test("core doGenerate keeps canonical v3 result shape", async () => {
+  test("v3 doGenerate keeps canonical v3 result shape", async () => {
     mock.module("@anthropic-ai/claude-agent-sdk", () => {
       return {
         query: async function* () {
@@ -45,14 +45,14 @@ describe("core entry contract", () => {
             total_cost_usd: 0,
             modelUsage: {},
             permission_denials: [],
-            uuid: "uuid-core-generate",
-            session_id: "session-core-generate",
+            uuid: "uuid-v3-generate",
+            session_id: "session-v3-generate",
           };
         },
       };
     });
 
-    const { anthropic } = await loadCoreModule();
+    const { anthropic } = await loadV3Module();
     const model = anthropic("claude-3-5-haiku-latest");
 
     expect(model.specificationVersion).toBe("v3");

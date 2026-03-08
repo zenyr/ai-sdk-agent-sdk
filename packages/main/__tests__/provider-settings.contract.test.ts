@@ -219,7 +219,7 @@ const importIndexWithMockedQuery = async (args: {
     };
   });
 
-  const moduleId = `../index.ts?provider-settings-${Date.now()}-${Math.random()}`;
+  const moduleId = `../v3.ts?provider-settings-${Date.now()}-${Math.random()}`;
   return import(moduleId);
 };
 
