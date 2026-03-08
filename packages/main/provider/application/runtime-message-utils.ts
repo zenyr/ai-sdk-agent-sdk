@@ -9,8 +9,7 @@ import type {
 import { isRecord, readString } from "../../shared/type-readers";
 
 export const EMPTY_TOOL_ROUTING_OUTPUT_ERROR = "empty-tool-routing-output";
-export const EMPTY_TOOL_ROUTING_OUTPUT_TEXT =
-  "Tool routing produced no tool call or text response.";
+export const EMPTY_TOOL_ROUTING_OUTPUT_TEXT = "Tool routing produced no tool call or text response.";
 
 export const isAssistantMessage = (message: SDKMessage): message is SDKAssistantMessage => {
   return message.type === "assistant";
@@ -20,9 +19,7 @@ export const isResultMessage = (message: SDKMessage): message is SDKResultMessag
   return message.type === "result";
 };
 
-export const isPartialAssistantMessage = (
-  message: SDKMessage,
-): message is SDKPartialAssistantMessage => {
+export const isPartialAssistantMessage = (message: SDKMessage): message is SDKPartialAssistantMessage => {
   return message.type === "stream_event";
 };
 
@@ -45,7 +42,7 @@ export const extractAssistantText = (assistantMessage: SDKAssistantMessage | und
   }
 
   return contentBlocks
-    .map((block) => {
+    .map(block => {
       if (!isRecord(block)) {
         return "";
       }

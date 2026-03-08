@@ -29,10 +29,7 @@ const readNonEmptyString = (value: unknown): string | undefined => {
   return value;
 };
 
-const readFirstNonEmptyString = (
-  source: Record<string, unknown> | undefined,
-  keys: string[],
-): string | undefined => {
+const readFirstNonEmptyString = (source: Record<string, unknown> | undefined, keys: string[]): string | undefined => {
   if (source === undefined) {
     return undefined;
   }
@@ -47,9 +44,7 @@ const readFirstNonEmptyString = (
   return undefined;
 };
 
-const readIncomingSessionKeyFromRecord = (
-  source: Record<string, unknown> | undefined,
-): string | undefined => {
+const readIncomingSessionKeyFromRecord = (source: Record<string, unknown> | undefined): string | undefined => {
   if (source === undefined) {
     return undefined;
   }
@@ -95,18 +90,14 @@ const readCaseInsensitiveHeader = (headers: unknown, headerName: string): string
   return undefined;
 };
 
-const readIncomingSessionKeyFromHeaders = (
-  optionsRecord: Record<string, unknown>,
-): string | undefined => {
+const readIncomingSessionKeyFromHeaders = (optionsRecord: Record<string, unknown>): string | undefined => {
   return (
     readCaseInsensitiveHeader(optionsRecord.headers, CONVERSATION_ID_HEADER) ??
     readCaseInsensitiveHeader(optionsRecord.headers, LEGACY_OPENCODE_SESSION_HEADER)
   );
 };
 
-const readIncomingSessionKeyFromTelemetry = (
-  optionsRecord: Record<string, unknown>,
-): string | undefined => {
+const readIncomingSessionKeyFromTelemetry = (optionsRecord: Record<string, unknown>): string | undefined => {
   const telemetry = readRecord(optionsRecord, "experimental_telemetry");
   if (telemetry === undefined) {
     return undefined;
@@ -120,9 +111,7 @@ const readIncomingSessionKeyFromTelemetry = (
   return readIncomingSessionKeyFromRecord(metadata);
 };
 
-const readIncomingSessionKeyFromProviderOptions = (
-  optionsRecord: Record<string, unknown>,
-): string | undefined => {
+const readIncomingSessionKeyFromProviderOptions = (optionsRecord: Record<string, unknown>): string | undefined => {
   const providerOptions = readRecord(optionsRecord, "providerOptions");
   if (providerOptions === undefined) {
     return undefined;

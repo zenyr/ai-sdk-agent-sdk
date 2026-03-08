@@ -16,26 +16,24 @@ const readNonEmptyEnv = (name: string): string | undefined => {
   return trimmed.length > 0 ? trimmed : undefined;
 };
 
-const isTextContent = (
-  part: LanguageModelV3Content,
-): part is Extract<LanguageModelV3Content, { type: "text" }> => {
+const isTextContent = (part: LanguageModelV3Content): part is Extract<LanguageModelV3Content, { type: "text" }> => {
   return part.type === "text";
 };
 
 const isToolCallContent = (
-  part: LanguageModelV3Content,
+  part: LanguageModelV3Content
 ): part is Extract<LanguageModelV3Content, { type: "tool-call" }> => {
   return part.type === "tool-call";
 };
 
 const isFinishPart = (
-  part: LanguageModelV3StreamPart,
+  part: LanguageModelV3StreamPart
 ): part is Extract<LanguageModelV3StreamPart, { type: "finish" }> => {
   return part.type === "finish";
 };
 
 const isErrorPart = (
-  part: LanguageModelV3StreamPart,
+  part: LanguageModelV3StreamPart
 ): part is Extract<LanguageModelV3StreamPart, { type: "error" }> => {
   return part.type === "error";
 };
@@ -59,9 +57,7 @@ const resolveProvider = () => {
     return createAnthropic({ authToken });
   }
 
-  throw new Error(
-    "Missing ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN. Set one before running bun run test:e2e.",
-  );
+  throw new Error("Missing ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN. Set one before running bun run test:e2e.");
 };
 
 const isE2eEnabled = readNonEmptyEnv(E2E_FLAG) === "1";
@@ -90,7 +86,7 @@ describe("real api e2e", () => {
 
     const text = result.content
       .filter(isTextContent)
-      .map((contentPart) => contentPart.text)
+      .map(contentPart => contentPart.text)
       .join(" ")
       .trim();
 
@@ -249,7 +245,7 @@ describe("real api e2e", () => {
 
     const responseText = secondTurn.content
       .filter(isTextContent)
-      .map((contentPart) => contentPart.text)
+      .map(contentPart => contentPart.text)
       .join(" ")
       .trim();
 

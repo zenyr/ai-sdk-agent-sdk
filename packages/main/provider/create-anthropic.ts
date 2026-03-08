@@ -35,15 +35,12 @@ export const createAnthropic = (options: AgentSdkProviderSettings = {}): Anthrop
   ) {
     throw new InvalidArgumentError({
       argument: "apiKey/authToken",
-      message:
-        "Both apiKey and authToken were provided. Please use only one authentication method.",
+      message: "Both apiKey and authToken were provided. Please use only one authentication method.",
     });
   }
 
   const providerName =
-    typeof options.name === "string" && options.name.length > 0
-      ? options.name
-      : "anthropic.messages";
+    typeof options.name === "string" && options.name.length > 0 ? options.name : "anthropic.messages";
 
   const idGenerator = typeof options.generateId === "function" ? options.generateId : generateId;
 
@@ -55,34 +52,31 @@ export const createAnthropic = (options: AgentSdkProviderSettings = {}): Anthrop
 
   const specificationVersion: "v3" = "v3";
 
-  const provider: AnthropicProvider = Object.assign(
-    (modelId: string) => createLanguageModel(modelId),
-    {
-      specificationVersion,
-      languageModel: createLanguageModel,
-      chat: createLanguageModel,
-      messages: createLanguageModel,
-      embeddingModel: (modelId: string) => {
-        throw new NoSuchModelError({
-          modelId,
-          modelType: "embeddingModel",
-        });
-      },
-      textEmbeddingModel: (modelId: string) => {
-        throw new NoSuchModelError({
-          modelId,
-          modelType: "embeddingModel",
-        });
-      },
-      imageModel: (modelId: string) => {
-        throw new NoSuchModelError({
-          modelId,
-          modelType: "imageModel",
-        });
-      },
-      tools: anthropicTools,
+  const provider: AnthropicProvider = Object.assign((modelId: string) => createLanguageModel(modelId), {
+    specificationVersion,
+    languageModel: createLanguageModel,
+    chat: createLanguageModel,
+    messages: createLanguageModel,
+    embeddingModel: (modelId: string) => {
+      throw new NoSuchModelError({
+        modelId,
+        modelType: "embeddingModel",
+      });
     },
-  );
+    textEmbeddingModel: (modelId: string) => {
+      throw new NoSuchModelError({
+        modelId,
+        modelType: "embeddingModel",
+      });
+    },
+    imageModel: (modelId: string) => {
+      throw new NoSuchModelError({
+        modelId,
+        modelType: "imageModel",
+      });
+    },
+    tools: anthropicTools,
+  });
 
   return provider;
 };

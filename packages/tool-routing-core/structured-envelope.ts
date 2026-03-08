@@ -69,11 +69,9 @@ const readLegacyToolCallsEnvelope = (value: unknown): StructuredToolEnvelope | u
     return undefined;
   }
 
-  const parsedCalls = toolCalls
-    .map(readLegacyToolCall)
-    .filter((call): call is StructuredToolCall => {
-      return call !== undefined;
-    });
+  const parsedCalls = toolCalls.map(readLegacyToolCall).filter((call): call is StructuredToolCall => {
+    return call !== undefined;
+  });
 
   if (parsedCalls.length === 0) {
     return undefined;
@@ -102,7 +100,7 @@ export const isStructuredToolEnvelope = (value: unknown): value is StructuredToo
     return false;
   }
 
-  return value.calls.every((call) => {
+  return value.calls.every(call => {
     if (!isRecord(call)) {
       return false;
     }
@@ -112,7 +110,7 @@ export const isStructuredToolEnvelope = (value: unknown): value is StructuredToo
 };
 
 export const parseStructuredEnvelopeFromUnknown = (
-  value: unknown,
+  value: unknown
 ): StructuredToolEnvelope | StructuredTextEnvelope | undefined => {
   if (isStructuredToolEnvelope(value)) {
     return value;
@@ -126,7 +124,7 @@ export const parseStructuredEnvelopeFromUnknown = (
 };
 
 export const parseStructuredEnvelopeFromText = (
-  value: string,
+  value: string
 ): StructuredToolEnvelope | StructuredTextEnvelope | undefined => {
   const trimmedValue = value.trim();
   if (trimmedValue.length === 0) {
@@ -144,9 +142,9 @@ export const parseStructuredEnvelopeFromText = (
 
 export const mapStructuredToolCallsToContent = (
   calls: StructuredToolCall[],
-  idGenerator: () => string,
+  idGenerator: () => string
 ): LanguageModelV3Content[] => {
-  return calls.map((call) => {
+  return calls.map(call => {
     return {
       type: "tool-call",
       toolCallId: idGenerator(),

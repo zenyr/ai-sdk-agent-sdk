@@ -5,11 +5,7 @@ import type {
   LanguageModelV3StreamResult,
   SharedV3Warning,
 } from "@ai-sdk/provider";
-import type {
-  SDKAssistantMessage,
-  SDKResultMessage,
-  SDKSystemMessage,
-} from "@anthropic-ai/claude-agent-sdk";
+import type { SDKAssistantMessage, SDKResultMessage, SDKSystemMessage } from "@anthropic-ai/claude-agent-sdk";
 
 import {
   isStructuredTextEnvelope,
@@ -23,11 +19,7 @@ import {
   closePendingStreamBlocks,
   enqueueSingleTextBlock,
 } from "../../bridge/stream-event-mapper";
-import {
-  createEmptyUsage,
-  type StreamBlockState,
-  type StreamEventState,
-} from "../../shared/stream-types";
+import { createEmptyUsage, type StreamBlockState, type StreamEventState } from "../../shared/stream-types";
 import type { AgentSdkProviderSettings, ToolExecutorMap } from "../../shared/tool-executor";
 import { safeJsonStringify } from "../../shared/type-readers";
 import type { PromptSessionState } from "../domain/prompt-session-state";
@@ -94,7 +86,7 @@ export const runStream = async (args: {
     previousSessionStates: args.previousSessionStates,
     previousIncomingSessionStates: args.previousIncomingSessionStates,
     hydrateIncomingSessionState: args.hydrateIncomingSessionState,
-    buildToolBridgeConfig: (tools) => {
+    buildToolBridgeConfig: tools => {
       return buildToolBridgeConfig(tools, args.toolExecutors);
     },
     buildPartialToolExecutorWarning: args.buildPartialToolExecutorWarning,
@@ -127,7 +119,7 @@ export const runStream = async (args: {
   const shouldBufferToolModeText = completionMode.type === "tools" && !useNativeToolExecution;
 
   const stream = new ReadableStream<LanguageModelV3StreamPart>({
-    start: async (controller) => {
+    start: async controller => {
       let lastAssistantMessage: SDKAssistantMessage | undefined;
       let finalResultMessage: SDKResultMessage | undefined;
       let initSystemMessage: SDKSystemMessage | undefined;
@@ -211,9 +203,7 @@ export const runStream = async (args: {
 
               if (
                 shouldBufferToolModeText &&
-                (mappedPart.type === "text-start" ||
-                  mappedPart.type === "text-delta" ||
-                  mappedPart.type === "text-end")
+                (mappedPart.type === "text-start" || mappedPart.type === "text-delta" || mappedPart.type === "text-end")
               ) {
                 if (mappedPart.type === "text-delta") {
                   bufferedToolModeText.push(mappedPart.delta);
@@ -286,9 +276,7 @@ export const runStream = async (args: {
           let parsedEnvelope: unknown;
 
           if (finalResultMessage?.subtype === "success") {
-            parsedEnvelope = parseStructuredEnvelopeFromUnknown(
-              finalResultMessage.structured_output,
-            );
+            parsedEnvelope = parseStructuredEnvelopeFromUnknown(finalResultMessage.structured_output);
           }
 
           if (parsedEnvelope === undefined && bufferedText.length > 0) {

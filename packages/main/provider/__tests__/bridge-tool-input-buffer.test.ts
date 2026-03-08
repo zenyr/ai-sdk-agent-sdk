@@ -21,7 +21,7 @@ describe("bridge-tool-input-buffer", () => {
         pendingBridgeToolInputs,
         id: "tool-call-1",
         delta: '{"command":"',
-      }),
+      })
     ).toBeTrue();
 
     expect(
@@ -29,7 +29,7 @@ describe("bridge-tool-input-buffer", () => {
         pendingBridgeToolInputs,
         id: "tool-call-1",
         delta: 'ls"',
-      }),
+      })
     ).toBeTrue();
 
     const finishedBridgeToolInput = finishPendingBridgeToolInput({

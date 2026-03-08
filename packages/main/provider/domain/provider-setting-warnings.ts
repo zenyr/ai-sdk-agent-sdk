@@ -3,9 +3,7 @@ import type { SharedV3Warning } from "@ai-sdk/provider";
 
 import { isRecord } from "../../shared/type-readers";
 
-export const collectProviderSettingWarnings = (
-  settings: AnthropicProviderSettings,
-): SharedV3Warning[] => {
+export const collectProviderSettingWarnings = (settings: AnthropicProviderSettings): SharedV3Warning[] => {
   const warnings: SharedV3Warning[] = [];
 
   const headers = settings.headers;

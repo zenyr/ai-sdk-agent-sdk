@@ -12,9 +12,7 @@ import {
 
 const MAX_INCOMING_SESSION_STATES = 100;
 
-const readPromptMessageSignature = (
-  message: LanguageModelV3Message | undefined,
-): string | undefined => {
+const readPromptMessageSignature = (message: LanguageModelV3Message | undefined): string | undefined => {
   if (message === undefined) {
     return undefined;
   }
@@ -31,7 +29,7 @@ export const findIncomingSessionState = (args: {
   incomingSessionKey: string;
   previousIncomingSessionStates: IncomingSessionState[];
 }): IncomingSessionState | undefined => {
-  return args.previousIncomingSessionStates.find((incomingSessionState) => {
+  return args.previousIncomingSessionStates.find(incomingSessionState => {
     return incomingSessionState.incomingSessionKey === args.incomingSessionKey;
   });
 };
@@ -40,10 +38,8 @@ export const mergeIncomingSessionState = (args: {
   previousIncomingSessionStates: IncomingSessionState[];
   nextIncomingSessionState: IncomingSessionState;
 }): IncomingSessionState[] => {
-  const dedupedStates = args.previousIncomingSessionStates.filter((incomingSessionState) => {
-    return (
-      incomingSessionState.incomingSessionKey !== args.nextIncomingSessionState.incomingSessionKey
-    );
+  const dedupedStates = args.previousIncomingSessionStates.filter(incomingSessionState => {
+    return incomingSessionState.incomingSessionKey !== args.nextIncomingSessionState.incomingSessionKey;
   });
 
   return [args.nextIncomingSessionState, ...dedupedStates].slice(0, MAX_INCOMING_SESSION_STATES);
@@ -56,9 +52,7 @@ export const buildIncomingSessionState = (args: {
 }): IncomingSessionState => {
   const promptMessageCount = args.promptMessages.length;
   const firstPromptMessageSignature = readPromptMessageSignature(args.promptMessages[0]);
-  const lastPromptMessageSignature = readPromptMessageSignature(
-    args.promptMessages[promptMessageCount - 1],
-  );
+  const lastPromptMessageSignature = readPromptMessageSignature(args.promptMessages[promptMessageCount - 1]);
 
   return {
     incomingSessionKey: args.incomingSessionKey,
@@ -96,8 +90,7 @@ const buildPromptQueryInputFromIncomingSession = (args: {
       }
 
       const previousLastPromptMessage = promptMessages[previousPromptMessageCount - 1];
-      const previousLastPromptMessageSignature =
-        readPromptMessageSignature(previousLastPromptMessage);
+      const previousLastPromptMessageSignature = readPromptMessageSignature(previousLastPromptMessage);
       if (
         args.incomingSessionState.lastPromptMessageSignature !== undefined &&
         previousLastPromptMessageSignature !== args.incomingSessionState.lastPromptMessageSignature

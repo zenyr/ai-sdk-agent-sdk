@@ -16,8 +16,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> => {
 
 describe("runtime surface contract", () => {
   test("root exports are available", async () => {
-    const { VERSION, anthropic, createAnthropic, forwardAnthropicContainerIdFromLastStep } =
-      await loadMainModule();
+    const { VERSION, anthropic, createAnthropic, forwardAnthropicContainerIdFromLastStep } = await loadMainModule();
 
     expect(typeof VERSION).toBe("string");
     expect(typeof anthropic).toBe("function");
@@ -27,9 +26,7 @@ describe("runtime surface contract", () => {
 
   test("VERSION matches package version", async () => {
     const { VERSION } = await loadMainModule();
-    const packageJson = JSON.parse(
-      await Bun.file(new URL("../package.json", import.meta.url)).text(),
-    );
+    const packageJson = JSON.parse(await Bun.file(new URL("../package.json", import.meta.url)).text());
 
     expect(VERSION).toBe(packageJson.version);
   });

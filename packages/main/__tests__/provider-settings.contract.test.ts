@@ -43,10 +43,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === "object" && value !== null;
 };
 
-const readQueryCall = (
-  queryCalls: unknown[],
-  index: number,
-): Record<string, unknown> | undefined => {
+const readQueryCall = (queryCalls: unknown[], index: number): Record<string, unknown> | undefined => {
   const queryCall = queryCalls[index];
   if (!isRecord(queryCall)) {
     return undefined;
@@ -55,10 +52,7 @@ const readQueryCall = (
   return queryCall;
 };
 
-const readOptionsFromQueryCall = (
-  queryCalls: unknown[],
-  index: number,
-): Record<string, unknown> | undefined => {
+const readOptionsFromQueryCall = (queryCalls: unknown[], index: number): Record<string, unknown> | undefined => {
   const queryCall = readQueryCall(queryCalls, index);
   if (queryCall === undefined) {
     return undefined;
@@ -101,7 +95,7 @@ const isAsyncIterable = (value: unknown): value is AsyncIterable<unknown> => {
 
 const readFirstPromptStreamMessageFromQueryCall = async (
   queryCalls: unknown[],
-  index: number,
+  index: number
 ): Promise<Record<string, unknown> | undefined> => {
   const queryCall = readQueryCall(queryCalls, index);
   if (queryCall === undefined) {
@@ -156,9 +150,7 @@ const readPromptFromFirstQueryCall = (queryCalls: unknown[]): string | undefined
   return readPromptFromQueryCall(queryCalls, 0);
 };
 
-const readOutputFormatFromFirstQueryCall = (
-  queryCalls: unknown[],
-): Record<string, unknown> | undefined => {
+const readOutputFormatFromFirstQueryCall = (queryCalls: unknown[]): Record<string, unknown> | undefined => {
   const options = readOptionsFromQueryCall(queryCalls, 0);
   if (!isRecord(options)) {
     return undefined;
@@ -172,9 +164,7 @@ const readOutputFormatFromFirstQueryCall = (
   return outputFormat;
 };
 
-const readOptionsFromFirstQueryCall = (
-  queryCalls: unknown[],
-): Record<string, unknown> | undefined => {
+const readOptionsFromFirstQueryCall = (queryCalls: unknown[]): Record<string, unknown> | undefined => {
   return readOptionsFromQueryCall(queryCalls, 0);
 };
 
@@ -1320,7 +1310,7 @@ describe("provider settings contract", () => {
       return;
     }
 
-    const imageBlock = content.find((contentBlock) => {
+    const imageBlock = content.find(contentBlock => {
       return isRecord(contentBlock) && contentBlock.type === "image";
     });
 
@@ -1504,9 +1494,7 @@ describe("provider settings contract", () => {
   });
 
   test("legacy compatibility: reuses session from providerOptions anthropic promptCacheKey", async () => {
-    const legacyAnthropicPromptCacheKey = createUniqueCacheKey(
-      "legacy-anthropic-provider-options-key",
-    );
+    const legacyAnthropicPromptCacheKey = createUniqueCacheKey("legacy-anthropic-provider-options-key");
     const queryCalls: unknown[] = [];
     let callCount = 0;
 
@@ -1557,9 +1545,7 @@ describe("provider settings contract", () => {
     });
 
     expect(queryCalls.length).toBe(2);
-    expect(readResumeFromQueryCall(queryCalls, 1)).toBe(
-      "legacy-anthropic-provider-options-session-1",
-    );
+    expect(readResumeFromQueryCall(queryCalls, 1)).toBe("legacy-anthropic-provider-options-session-1");
   });
 
   test("discovers session from unknown providerOptions namespace via candidate keys", async () => {

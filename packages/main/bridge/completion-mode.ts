@@ -18,10 +18,10 @@ export type CompletionMode =
 
 export const buildToolInstruction = (
   tools: LanguageModelV3FunctionTool[],
-  toolChoice: LanguageModelV3CallOptions["toolChoice"],
+  toolChoice: LanguageModelV3CallOptions["toolChoice"]
 ): string => {
   const toolLines = tools
-    .map((toolDefinition) => {
+    .map(toolDefinition => {
       const description = toolDefinition.description ?? "No description";
       const schema = safeJsonStringify(toolDefinition.inputSchema);
 
@@ -52,14 +52,12 @@ export const buildToolInstruction = (
 
 export const buildToolSchema = (
   tools: LanguageModelV3FunctionTool[],
-  toolChoice: LanguageModelV3CallOptions["toolChoice"],
+  toolChoice: LanguageModelV3CallOptions["toolChoice"]
 ): Record<string, unknown> => {
   const filteredTools =
-    toolChoice?.type === "tool"
-      ? tools.filter((toolDefinition) => toolDefinition.name === toolChoice.toolName)
-      : tools;
+    toolChoice?.type === "tool" ? tools.filter(toolDefinition => toolDefinition.name === toolChoice.toolName) : tools;
 
-  const callVariants = filteredTools.map((toolDefinition) => {
+  const callVariants = filteredTools.map(toolDefinition => {
     return {
       type: "object",
       additionalProperties: false,
@@ -92,10 +90,7 @@ export const buildToolSchema = (
           calls: {
             type: "array",
             minItems: 1,
-            items:
-              callVariants.length > 0
-                ? { oneOf: callVariants }
-                : { type: "object", additionalProperties: true },
+            items: callVariants.length > 0 ? { oneOf: callVariants } : { type: "object", additionalProperties: true },
           },
         },
       },

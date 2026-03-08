@@ -49,7 +49,7 @@ export const normalizeToolInputJson = (value: string): string => {
 
 export const buildToolBridgeConfig = (
   tools: Array<{ name: string; description?: string; inputSchema: unknown }>,
-  toolExecutors: ToolExecutorMap | undefined,
+  toolExecutors: ToolExecutorMap | undefined
 ): ToolBridgeConfig | undefined => {
   if (tools.length === 0) {
     return undefined;
@@ -97,7 +97,7 @@ export const buildToolBridgeConfig = (
   const missingExecutorToolNames: string[] = [];
   let hasAnyExecutor = false;
 
-  const mcpTools = tools.map((toolDefinition) => {
+  const mcpTools = tools.map(toolDefinition => {
     const zodRawShape = buildZodRawShapeFromToolInputSchema(toolDefinition.inputSchema);
     const toolExecutor = toolExecutors?.[toolDefinition.name];
 
@@ -141,7 +141,7 @@ export const buildToolBridgeConfig = (
         toolDefinition.name,
         toolDefinition.description ?? "No description",
         zodRawShape,
-        toolHandler,
+        toolHandler
       );
     }
 
@@ -159,7 +159,7 @@ export const buildToolBridgeConfig = (
   });
 
   return {
-    allowedTools: tools.map((toolDefinition) => {
+    allowedTools: tools.map(toolDefinition => {
       return toBridgeToolName(toolDefinition.name);
     }),
     mcpServers: {

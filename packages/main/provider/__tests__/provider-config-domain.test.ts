@@ -27,10 +27,10 @@ describe("provider domain config helpers", () => {
     };
 
     const warnings = collectProviderSettingWarnings(settings);
-    const unsupportedWarnings = warnings.filter((warning) => {
+    const unsupportedWarnings = warnings.filter(warning => {
       return warning.type === "unsupported";
     });
-    const unsupportedFeatures = unsupportedWarnings.map((warning) => {
+    const unsupportedFeatures = unsupportedWarnings.map(warning => {
       return warning.feature;
     });
 

@@ -23,7 +23,7 @@ const UNSUPPORTED_OPTION_DETAILS: Record<string, string> = {
 const MAPPED_OPTIONS = new Set(["effort", "thinking"]);
 
 export const collectAnthropicProviderOptionWarnings = (
-  providerOptions: SharedV3ProviderOptions | undefined,
+  providerOptions: SharedV3ProviderOptions | undefined
 ): SharedV3Warning[] => {
   if (!isRecord(providerOptions)) {
     return [];

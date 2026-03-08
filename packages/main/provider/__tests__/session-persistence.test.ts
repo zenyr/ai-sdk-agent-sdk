@@ -27,7 +27,7 @@ describe("session-persistence", () => {
       setPromptSessionStates: () => {
         setPromptSessionStateCalled = true;
       },
-      persistIncomingSessionState: async (incomingSessionState) => {
+      persistIncomingSessionState: async incomingSessionState => {
         persistedIncomingSessionState = incomingSessionState;
       },
     });
@@ -60,7 +60,7 @@ describe("session-persistence", () => {
       serializedPromptMessages: ["user:hello"],
       promptMessages: [userMessage("hello")],
       previousSessionStates: () => [],
-      setPromptSessionStates: (sessionStates) => {
+      setPromptSessionStates: sessionStates => {
         capturedPromptSessionStates.push(sessionStates);
       },
       persistIncomingSessionState: async () => {},
@@ -114,7 +114,7 @@ describe("session-persistence", () => {
       promptMessages: [userMessage("second")],
       previousSessionStates: () => [],
       setPromptSessionStates: () => {},
-      persistIncomingSessionState: async (incomingSessionState) => {
+      persistIncomingSessionState: async incomingSessionState => {
         persistedIncomingSessionState = incomingSessionState;
       },
     });

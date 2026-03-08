@@ -1,9 +1,6 @@
 import type { AnthropicLanguageModelOptions } from "@ai-sdk/anthropic";
 import { withOpenCodeCompatibility } from "./compat/open-code-compat";
-import {
-  anthropic as coreAnthropic,
-  createAnthropic as createCoreAnthropic,
-} from "./provider/create-anthropic";
+import { anthropic as coreAnthropic, createAnthropic as createCoreAnthropic } from "./provider/create-anthropic";
 
 export type {
   AnthropicLanguageModelOptions,

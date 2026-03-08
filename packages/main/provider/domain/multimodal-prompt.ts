@@ -1,10 +1,7 @@
 import type { LanguageModelV3Message } from "@ai-sdk/provider";
 import type { SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 
-import {
-  joinSerializedPromptMessages,
-  serializePromptMessagesWithoutSystem,
-} from "../../bridge/prompt-serializer";
+import { joinSerializedPromptMessages, serializePromptMessagesWithoutSystem } from "../../bridge/prompt-serializer";
 import { isRecord, readString } from "../../shared/type-readers";
 
 type AgentUserTextContentBlock = {
@@ -93,9 +90,7 @@ const hasImagePart = (contentParts: unknown[]): boolean => {
       continue;
     }
 
-    const mediaType = normalizeMediaType(
-      readString(contentPart, "mediaType") ?? readString(contentPart, "mimeType"),
-    );
+    const mediaType = normalizeMediaType(readString(contentPart, "mediaType") ?? readString(contentPart, "mimeType"));
     if (isImageMediaType(mediaType)) {
       return true;
     }
@@ -160,9 +155,7 @@ const readBinaryDataAsUint8Array = (value: unknown): Uint8Array | undefined => {
   return undefined;
 };
 
-const readImageDataFromUrl = async (
-  url: URL,
-): Promise<{ mediaType: string | undefined; data: string }> => {
+const readImageDataFromUrl = async (url: URL): Promise<{ mediaType: string | undefined; data: string }> => {
   const response = await fetch(url);
   if (!response.ok) {
     throw new Error(`failed to download image attachment: ${url.toString()}`);
@@ -248,9 +241,7 @@ const normalizeImageAttachment = async (args: {
   };
 };
 
-const mapContentPartToMultimodalBlocks = async (
-  contentPart: unknown,
-): Promise<AgentUserContentBlock[]> => {
+const mapContentPartToMultimodalBlocks = async (contentPart: unknown): Promise<AgentUserContentBlock[]> => {
   if (!isRecord(contentPart)) {
     return [];
   }
@@ -292,9 +283,7 @@ const mapContentPartToMultimodalBlocks = async (
   ];
 };
 
-const createSingleUserMessagePrompt = (
-  userMessage: SDKUserMessage,
-): AsyncIterable<SDKUserMessage> => {
+const createSingleUserMessagePrompt = (userMessage: SDKUserMessage): AsyncIterable<SDKUserMessage> => {
   const promptStream = {
     async *[Symbol.asyncIterator]() {
       yield userMessage;
@@ -335,8 +324,7 @@ export const buildMultimodalQueryPrompt = async (args: {
 
   if (args.resumeSessionId === undefined) {
     const previousPromptMessages = args.promptMessages.slice(0, lastUserMessageIndex);
-    const serializedPreviousPromptMessages =
-      serializePromptMessagesWithoutSystem(previousPromptMessages);
+    const serializedPreviousPromptMessages = serializePromptMessagesWithoutSystem(previousPromptMessages);
     const previousPromptText = joinSerializedPromptMessages(serializedPreviousPromptMessages);
 
     if (previousPromptText.length > 0) {

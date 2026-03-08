@@ -1,8 +1,4 @@
-import type {
-  LanguageModelV3Content,
-  LanguageModelV3StreamPart,
-  LanguageModelV3Usage,
-} from "@ai-sdk/provider";
+import type { LanguageModelV3Content, LanguageModelV3StreamPart, LanguageModelV3Usage } from "@ai-sdk/provider";
 import { generateId } from "@ai-sdk/provider-utils";
 import type { StreamEventState } from "../shared/stream-types";
 import { isRecord, readNumber, readRecord, readString } from "../shared/type-readers";
@@ -14,7 +10,7 @@ type StreamPartEnqueuer = {
 
 export const appendStreamPartsFromRawEvent = (
   rawEvent: unknown,
-  streamState: StreamEventState,
+  streamState: StreamEventState
 ): LanguageModelV3StreamPart[] => {
   if (!isRecord(rawEvent)) {
     return [];
@@ -70,8 +66,7 @@ export const appendStreamPartsFromRawEvent = (
     ) {
       const blockId = readString(contentBlock, "id") ?? generateId();
       const toolName = readString(contentBlock, "name") ?? "unknown_tool";
-      const providerExecuted =
-        contentBlockType === "server_tool_use" || contentBlockType === "mcp_tool_use";
+      const providerExecuted = contentBlockType === "server_tool_use" || contentBlockType === "mcp_tool_use";
       const dynamic = contentBlockType === "mcp_tool_use";
 
       streamState.blockStates.set(index, { kind: "tool-input", id: blockId });
@@ -182,9 +177,7 @@ export const appendStreamPartsFromRawEvent = (
   return [];
 };
 
-export const closePendingStreamBlocks = (
-  streamState: StreamEventState,
-): LanguageModelV3StreamPart[] => {
+export const closePendingStreamBlocks = (streamState: StreamEventState): LanguageModelV3StreamPart[] => {
   const parts: LanguageModelV3StreamPart[] = [];
 
   for (const blockState of streamState.blockStates.values()) {
@@ -206,20 +199,14 @@ export const closePendingStreamBlocks = (
   return parts;
 };
 
-export const enqueueSingleTextBlock = (
-  enqueuer: StreamPartEnqueuer,
-  idGenerator: () => string,
-  text: string,
-): void => {
+export const enqueueSingleTextBlock = (enqueuer: StreamPartEnqueuer, idGenerator: () => string, text: string): void => {
   const blockId = idGenerator();
   enqueuer.enqueue({ type: "text-start", id: blockId });
   enqueuer.enqueue({ type: "text-delta", id: blockId, delta: text });
   enqueuer.enqueue({ type: "text-end", id: blockId });
 };
 
-export const contentToStreamParts = (
-  content: LanguageModelV3Content[],
-): LanguageModelV3StreamPart[] => {
+export const contentToStreamParts = (content: LanguageModelV3Content[]): LanguageModelV3StreamPart[] => {
   const streamParts: LanguageModelV3StreamPart[] = [];
 
   for (const contentPart of content) {
@@ -254,7 +241,7 @@ export const contentToStreamParts = (
 };
 
 export const appendStreamBlocks = (
-  blocks: Array<{ kind: "text" | "reasoning"; id: string }>,
+  blocks: Array<{ kind: "text" | "reasoning"; id: string }>
 ): LanguageModelV3StreamPart[] => {
   const streamParts: LanguageModelV3StreamPart[] = [];
 
@@ -272,9 +259,7 @@ export const appendStreamBlocks = (
   return streamParts;
 };
 
-export const collectUsage = (
-  deltas: Array<LanguageModelV3Usage | undefined>,
-): LanguageModelV3Usage => {
+export const collectUsage = (deltas: Array<LanguageModelV3Usage | undefined>): LanguageModelV3Usage => {
   return deltas.reduce<LanguageModelV3Usage>(
     (acc, item) => {
       if (item === undefined) {
@@ -307,6 +292,6 @@ export const collectUsage = (
         text: undefined,
         reasoning: undefined,
       },
-    },
+    }
   );
 };

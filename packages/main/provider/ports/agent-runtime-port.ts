@@ -1,8 +1,4 @@
-import type {
-  Options as AgentQueryOptions,
-  SDKMessage,
-  SDKUserMessage,
-} from "@anthropic-ai/claude-agent-sdk";
+import type { Options as AgentQueryOptions, SDKMessage, SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 
 export type AgentRuntimePort = {
   query(args: {

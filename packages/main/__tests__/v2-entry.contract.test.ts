@@ -169,7 +169,7 @@ describe("v2 entry compatibility contract", () => {
       parts.push(part);
     }
 
-    const finishPart = parts.find((part) => {
+    const finishPart = parts.find(part => {
       return typeof part === "object" && part !== null && "type" in part && part.type === "finish";
     });
 
@@ -619,7 +619,7 @@ describe("v2 entry compatibility contract", () => {
       parts.push(part);
     }
 
-    const finishPart = parts.find((part) => {
+    const finishPart = parts.find(part => {
       return typeof part === "object" && part !== null && "type" in part && part.type === "finish";
     });
 

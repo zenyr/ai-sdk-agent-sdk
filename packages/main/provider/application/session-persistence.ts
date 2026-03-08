@@ -1,9 +1,6 @@
 import type { LanguageModelV3Message } from "@ai-sdk/provider";
 
-import {
-  buildIncomingSessionState,
-  readSessionIdFromQueryMessages,
-} from "../domain/incoming-session-state";
+import { buildIncomingSessionState, readSessionIdFromQueryMessages } from "../domain/incoming-session-state";
 import { mergePromptSessionState, type PromptSessionState } from "../domain/prompt-session-state";
 import type { IncomingSessionState } from "../incoming-session-store";
 
@@ -19,9 +16,7 @@ type PersistQuerySessionStateArgs = {
   persistIncomingSessionState: (incomingSessionState: IncomingSessionState) => Promise<void>;
 };
 
-export const persistQuerySessionState = async (
-  args: PersistQuerySessionStateArgs,
-): Promise<void> => {
+export const persistQuerySessionState = async (args: PersistQuerySessionStateArgs): Promise<void> => {
   const sessionId = readSessionIdFromQueryMessages({
     resultMessage: args.resultMessage,
     assistantMessage: args.assistantMessage,
@@ -40,7 +35,7 @@ export const persistQuerySessionState = async (
           sessionId,
           serializedPromptMessages: args.serializedPromptMessages,
         },
-      }),
+      })
     );
   }
 
@@ -53,6 +48,6 @@ export const persistQuerySessionState = async (
       incomingSessionKey: args.incomingSessionKey,
       sessionId,
       promptMessages: args.promptMessages,
-    }),
+    })
   );
 };

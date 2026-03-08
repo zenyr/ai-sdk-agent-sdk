@@ -33,9 +33,7 @@ type SyncVersionInConstantsResult = {
   changed: boolean;
 };
 
-export const syncVersionInConstants = (
-  args: SyncVersionInConstantsArgs,
-): SyncVersionInConstantsResult => {
+export const syncVersionInConstants = (args: SyncVersionInConstantsArgs): SyncVersionInConstantsResult => {
   if (args.version.length === 0) {
     throw new Error("version must be non-empty");
   }
@@ -45,10 +43,7 @@ export const syncVersionInConstants = (
     throw new Error("VERSION marker not found in constants file");
   }
 
-  const updatedSource = args.constantsSource.replace(
-    versionMarkerPattern,
-    `export const VERSION = "${args.version}";`,
-  );
+  const updatedSource = args.constantsSource.replace(versionMarkerPattern, `export const VERSION = "${args.version}";`);
 
   return {
     updatedSource,

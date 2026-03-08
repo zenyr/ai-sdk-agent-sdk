@@ -19,9 +19,7 @@ type BuildAgentQueryOptionsArgs = {
   includePartialMessages: boolean;
 };
 
-const resolveAgentSdkQueryOptions = (
-  settings: AgentSdkProviderSettings,
-): AgentSdkQueryOptions | undefined => {
+const resolveAgentSdkQueryOptions = (settings: AgentSdkProviderSettings): AgentSdkQueryOptions | undefined => {
   return settings.experimental_agentSdk;
 };
 

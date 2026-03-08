@@ -4,11 +4,7 @@ import type {
   LanguageModelV3GenerateResult,
   SharedV3Warning,
 } from "@ai-sdk/provider";
-import type {
-  SDKAssistantMessage,
-  SDKResultMessage,
-  SDKSystemMessage,
-} from "@anthropic-ai/claude-agent-sdk";
+import type { SDKAssistantMessage, SDKResultMessage, SDKSystemMessage } from "@anthropic-ai/claude-agent-sdk";
 
 import {
   isStructuredTextEnvelope,
@@ -18,15 +14,8 @@ import {
   parseStructuredEnvelopeFromUnknown,
 } from "../../bridge/parse-utils";
 import { buildProviderMetadata, mapFinishReason, mapUsage } from "../../bridge/result-mapping";
-import {
-  appendStreamPartsFromRawEvent,
-  closePendingStreamBlocks,
-} from "../../bridge/stream-event-mapper";
-import {
-  createEmptyUsage,
-  type StreamBlockState,
-  type StreamEventState,
-} from "../../shared/stream-types";
+import { appendStreamPartsFromRawEvent, closePendingStreamBlocks } from "../../bridge/stream-event-mapper";
+import { createEmptyUsage, type StreamBlockState, type StreamEventState } from "../../shared/stream-types";
 import type { AgentSdkProviderSettings, ToolExecutorMap } from "../../shared/tool-executor";
 import { safeJsonStringify } from "../../shared/type-readers";
 import type { PromptSessionState } from "../domain/prompt-session-state";
@@ -97,7 +86,7 @@ export const runGenerate = async (args: {
     previousSessionStates: args.previousSessionStates,
     previousIncomingSessionStates: args.previousIncomingSessionStates,
     hydrateIncomingSessionState: args.hydrateIncomingSessionState,
-    buildToolBridgeConfig: (tools) => {
+    buildToolBridgeConfig: tools => {
       return buildToolBridgeConfig(tools, args.toolExecutors);
     },
     buildPartialToolExecutorWarning: args.buildPartialToolExecutorWarning,
@@ -133,11 +122,7 @@ export const runGenerate = async (args: {
   const pendingBridgeToolInputs = new Map<string, { toolName: string; deltas: string[] }>();
   const recoveredToolCallsFromStream: LanguageModelV3Content[] = [];
 
-  const appendRecoveredToolCall = (toolCall: {
-    toolCallId: string;
-    toolName: string;
-    rawInput: string;
-  }) => {
+  const appendRecoveredToolCall = (toolCall: { toolCallId: string; toolName: string; rawInput: string }) => {
     recoveredToolCallsFromStream.push({
       type: "tool-call",
       toolCallId: toolCall.toolCallId,
@@ -170,11 +155,7 @@ export const runGenerate = async (args: {
             continue;
           }
 
-          if (
-            completionMode.type === "tools" &&
-            !useNativeToolExecution &&
-            mappedPart.type === "tool-input-delta"
-          ) {
+          if (completionMode.type === "tools" && !useNativeToolExecution && mappedPart.type === "tool-input-delta") {
             appendPendingBridgeToolInputDelta({
               pendingBridgeToolInputs,
               id: mappedPart.id,
@@ -184,11 +165,7 @@ export const runGenerate = async (args: {
             continue;
           }
 
-          if (
-            completionMode.type === "tools" &&
-            !useNativeToolExecution &&
-            mappedPart.type === "tool-input-end"
-          ) {
+          if (completionMode.type === "tools" && !useNativeToolExecution && mappedPart.type === "tool-input-end") {
             const finishedBridgeToolInput = finishPendingBridgeToolInput({
               pendingBridgeToolInputs,
               id: mappedPart.id,
@@ -222,11 +199,7 @@ export const runGenerate = async (args: {
 
     const remainingParts = closePendingStreamBlocks(partialStreamState);
     for (const remainingPart of remainingParts) {
-      if (
-        completionMode.type === "tools" &&
-        !useNativeToolExecution &&
-        remainingPart.type === "tool-input-end"
-      ) {
+      if (completionMode.type === "tools" && !useNativeToolExecution && remainingPart.type === "tool-input-end") {
         const finishedBridgeToolInput = finishPendingBridgeToolInput({
           pendingBridgeToolInputs,
           id: remainingPart.id,
@@ -371,15 +344,10 @@ export const runGenerate = async (args: {
   if (finalResultMessage.subtype === "success") {
     const structuredOutput = finalResultMessage.structured_output;
     const parsedStructuredOutput =
-      completionMode.type === "tools"
-        ? parseStructuredEnvelopeFromUnknown(structuredOutput)
-        : undefined;
+      completionMode.type === "tools" ? parseStructuredEnvelopeFromUnknown(structuredOutput) : undefined;
 
     if (completionMode.type === "tools" && isStructuredToolEnvelope(parsedStructuredOutput)) {
-      const toolCalls = mapStructuredToolCallsToContent(
-        parsedStructuredOutput.calls,
-        args.idGenerator,
-      );
+      const toolCalls = mapStructuredToolCallsToContent(parsedStructuredOutput.calls, args.idGenerator);
 
       if (toolCalls.length > 0) {
         content = toolCalls;
@@ -390,11 +358,7 @@ export const runGenerate = async (args: {
       }
     }
 
-    if (
-      content.length === 0 &&
-      completionMode.type === "tools" &&
-      recoveredToolCallsFromStream.length > 0
-    ) {
+    if (content.length === 0 && completionMode.type === "tools" && recoveredToolCallsFromStream.length > 0) {
       content = recoveredToolCallsFromStream;
       finishReason = {
         unified: "tool-calls",
@@ -418,11 +382,7 @@ export const runGenerate = async (args: {
       }
     }
 
-    if (
-      content.length === 0 &&
-      completionMode.type === "tools" &&
-      isStructuredTextEnvelope(parsedStructuredOutput)
-    ) {
+    if (content.length === 0 && completionMode.type === "tools" && isStructuredTextEnvelope(parsedStructuredOutput)) {
       content = [{ type: "text", text: parsedStructuredOutput.text }];
     }
 
@@ -439,10 +399,7 @@ export const runGenerate = async (args: {
           const parsedEnvelope = parseStructuredEnvelopeFromText(assistantText);
 
           if (isStructuredToolEnvelope(parsedEnvelope)) {
-            const toolCalls = mapStructuredToolCallsToContent(
-              parsedEnvelope.calls,
-              args.idGenerator,
-            );
+            const toolCalls = mapStructuredToolCallsToContent(parsedEnvelope.calls, args.idGenerator);
 
             if (toolCalls.length > 0) {
               content = toolCalls;
@@ -507,7 +464,7 @@ export const runGenerate = async (args: {
         if (recoveredContent.length > 0) {
           content = recoveredContent;
 
-          const hasRecoveredToolCalls = recoveredContent.some((part) => {
+          const hasRecoveredToolCalls = recoveredContent.some(part => {
             return part.type === "tool-call";
           });
 
@@ -538,11 +495,7 @@ export const runGenerate = async (args: {
     }
   }
 
-  if (
-    completionMode.type === "tools" &&
-    !hasToolModePrimaryContent(content) &&
-    finishReason.unified !== "error"
-  ) {
+  if (completionMode.type === "tools" && !hasToolModePrimaryContent(content) && finishReason.unified !== "error") {
     content = [
       {
         type: "text",

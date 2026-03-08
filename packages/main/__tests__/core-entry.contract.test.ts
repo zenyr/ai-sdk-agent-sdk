@@ -20,8 +20,7 @@ const buildMockResultUsage = () => {
 
 describe("core entry contract", () => {
   test("core exports pure provider entrypoints", async () => {
-    const { VERSION, anthropic, createAnthropic, forwardAnthropicContainerIdFromLastStep } =
-      await loadCoreModule();
+    const { VERSION, anthropic, createAnthropic, forwardAnthropicContainerIdFromLastStep } = await loadCoreModule();
 
     expect(typeof VERSION).toBe("string");
     expect(typeof anthropic).toBe("function");

@@ -13,9 +13,7 @@ const readNonEmptyString = (value: unknown): string | undefined => {
   return value;
 };
 
-export const buildQueryEnv = (
-  settings: AnthropicProviderSettings,
-): Record<string, string | undefined> => {
+export const buildQueryEnv = (settings: AnthropicProviderSettings): Record<string, string | undefined> => {
   const env: Record<string, string | undefined> = {
     ...process.env,
   };

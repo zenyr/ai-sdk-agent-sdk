@@ -51,7 +51,7 @@ describe("tool-recovery", () => {
         },
       ]),
       idGenerator: () => "generated-id",
-      mapToolName: (toolName) => {
+      mapToolName: toolName => {
         return toolName.replace("mcp__ai_sdk_tool_bridge__", "");
       },
     });

@@ -20,7 +20,7 @@ const extractAssistantText = (assistantMessage: SDKAssistantMessage | undefined)
   }
 
   const text = contentBlocks
-    .map((block) => {
+    .map(block => {
       if (!isRecord(block)) {
         return "";
       }
@@ -38,7 +38,7 @@ const extractAssistantText = (assistantMessage: SDKAssistantMessage | undefined)
 };
 
 export const hasToolModePrimaryContent = (content: LanguageModelV3Content[]): boolean => {
-  return content.some((part) => {
+  return content.some(part => {
     if (part.type === "tool-call") {
       return true;
     }
@@ -73,11 +73,7 @@ export const recoverToolModeToolCallsFromAssistant = (args: {
     }
 
     const blockType = readString(block, "type");
-    if (
-      blockType !== "tool_use" &&
-      blockType !== "mcp_tool_use" &&
-      blockType !== "server_tool_use"
-    ) {
+    if (blockType !== "tool_use" && blockType !== "mcp_tool_use" && blockType !== "server_tool_use") {
       continue;
     }
 

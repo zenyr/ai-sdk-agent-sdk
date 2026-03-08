@@ -34,10 +34,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === "object" && value !== null;
 };
 
-const readRecordValue = (
-  value: Record<string, unknown>,
-  key: string,
-): Record<string, unknown> | undefined => {
+const readRecordValue = (value: Record<string, unknown>, key: string): Record<string, unknown> | undefined => {
   const candidate = value[key];
   return isRecord(candidate) ? candidate : undefined;
 };
@@ -60,9 +57,7 @@ const isAsyncIterable = (value: unknown): value is AsyncIterable<unknown> => {
   return typeof asyncIterator === "function";
 };
 
-const readFirstPromptStreamMessage = async (
-  queryCall: unknown,
-): Promise<Record<string, unknown> | undefined> => {
+const readFirstPromptStreamMessage = async (queryCall: unknown): Promise<Record<string, unknown> | undefined> => {
   if (!isRecord(queryCall)) {
     return undefined;
   }
@@ -174,13 +169,8 @@ describe("stream bridge contract", () => {
       parts.push(part);
     }
 
-    const metadataPart = parts.find((part) => {
-      return (
-        typeof part === "object" &&
-        part !== null &&
-        "type" in part &&
-        part.type === "response-metadata"
-      );
+    const metadataPart = parts.find(part => {
+      return typeof part === "object" && part !== null && "type" in part && part.type === "response-metadata";
     });
 
     expect(metadataPart).toBeDefined();
@@ -197,15 +187,13 @@ describe("stream bridge contract", () => {
     expect(metadataPart.id).toBe("msg-1");
     expect(metadataPart.modelId).toBe("mock-model");
 
-    const hasTextDelta = parts.some((part) => {
-      return (
-        typeof part === "object" && part !== null && "type" in part && part.type === "text-delta"
-      );
+    const hasTextDelta = parts.some(part => {
+      return typeof part === "object" && part !== null && "type" in part && part.type === "text-delta";
     });
 
     expect(hasTextDelta).toBeTrue();
 
-    const finishPart = parts.find((part) => {
+    const finishPart = parts.find(part => {
       return typeof part === "object" && part !== null && "type" in part && part.type === "finish";
     });
 
@@ -283,8 +271,7 @@ describe("stream bridge contract", () => {
       return;
     }
 
-    const systemPrompt =
-      typeof options.systemPrompt === "string" ? options.systemPrompt : undefined;
+    const systemPrompt = typeof options.systemPrompt === "string" ? options.systemPrompt : undefined;
     expect(systemPrompt).toBe("Follow system rules.");
     expect(prompt.includes("[system]")).toBeFalse();
     expect(prompt.includes("[user]")).toBeFalse();
@@ -399,20 +386,14 @@ describe("stream bridge contract", () => {
       parts.push(part);
     }
 
-    const textDeltas = parts.filter((part) => {
-      return (
-        typeof part === "object" && part !== null && "type" in part && part.type === "text-delta"
-      );
+    const textDeltas = parts.filter(part => {
+      return typeof part === "object" && part !== null && "type" in part && part.type === "text-delta";
     });
 
     expect(textDeltas.length).toBe(1);
 
     const firstTextDelta = textDeltas[0];
-    if (
-      typeof firstTextDelta !== "object" ||
-      firstTextDelta === null ||
-      !("delta" in firstTextDelta)
-    ) {
+    if (typeof firstTextDelta !== "object" || firstTextDelta === null || !("delta" in firstTextDelta)) {
       return;
     }
 
@@ -763,7 +744,7 @@ describe("stream bridge contract", () => {
       return;
     }
 
-    const imageBlock = content.find((contentBlock) => {
+    const imageBlock = content.find(contentBlock => {
       return isRecord(contentBlock) && contentBlock.type === "image";
     });
 
@@ -974,10 +955,8 @@ describe("stream bridge contract", () => {
       parts.push(part);
     }
 
-    const toolCallPart = parts.find((part) => {
-      return (
-        typeof part === "object" && part !== null && "type" in part && part.type === "tool-call"
-      );
+    const toolCallPart = parts.find(part => {
+      return typeof part === "object" && part !== null && "type" in part && part.type === "tool-call";
     });
 
     expect(toolCallPart).toBeDefined();
@@ -994,7 +973,7 @@ describe("stream bridge contract", () => {
     expect(toolCallPart.toolName).toBe("lookup_weather");
     expect(toolCallPart.input).toBe('{"city":"seoul"}');
 
-    const finishPart = parts.find((part) => {
+    const finishPart = parts.find(part => {
       return typeof part === "object" && part !== null && "type" in part && part.type === "finish";
     });
 
@@ -1135,10 +1114,8 @@ describe("stream bridge contract", () => {
       parts.push(part);
     }
 
-    const toolCallPart = parts.find((part) => {
-      return (
-        typeof part === "object" && part !== null && "type" in part && part.type === "tool-call"
-      );
+    const toolCallPart = parts.find(part => {
+      return typeof part === "object" && part !== null && "type" in part && part.type === "tool-call";
     });
 
     expect(toolCallPart).toBeDefined();
@@ -1157,24 +1134,19 @@ describe("stream bridge contract", () => {
     expect(toolCallPart.toolName).toBe("bash");
     expect(String(toolCallPart.input)).toContain("Math.random");
 
-    const toolInputEndPart = parts.find((part) => {
-      return (
-        typeof part === "object" &&
-        part !== null &&
-        "type" in part &&
-        part.type === "tool-input-end"
-      );
+    const toolInputEndPart = parts.find(part => {
+      return typeof part === "object" && part !== null && "type" in part && part.type === "tool-input-end";
     });
 
     expect(toolInputEndPart).toBeDefined();
 
-    const errorPart = parts.find((part) => {
+    const errorPart = parts.find(part => {
       return typeof part === "object" && part !== null && "type" in part && part.type === "error";
     });
 
     expect(errorPart).toBeUndefined();
 
-    const finishPart = parts.find((part) => {
+    const finishPart = parts.find(part => {
       return typeof part === "object" && part !== null && "type" in part && part.type === "finish";
     });
 
@@ -1304,10 +1276,8 @@ describe("stream bridge contract", () => {
       parts.push(part);
     }
 
-    const toolCallPart = parts.find((part) => {
-      return (
-        typeof part === "object" && part !== null && "type" in part && part.type === "tool-call"
-      );
+    const toolCallPart = parts.find(part => {
+      return typeof part === "object" && part !== null && "type" in part && part.type === "tool-call";
     });
 
     expect(toolCallPart).toBeDefined();
@@ -1326,7 +1296,7 @@ describe("stream bridge contract", () => {
     expect(toolCallPart.toolName).toBe("bash");
     expect(String(toolCallPart.input)).toContain("Math.random");
 
-    const finishPart = parts.find((part) => {
+    const finishPart = parts.find(part => {
       return typeof part === "object" && part !== null && "type" in part && part.type === "finish";
     });
 
@@ -1461,10 +1431,8 @@ describe("stream bridge contract", () => {
       parts.push(part);
     }
 
-    const toolCallPart = parts.find((part) => {
-      return (
-        typeof part === "object" && part !== null && "type" in part && part.type === "tool-call"
-      );
+    const toolCallPart = parts.find(part => {
+      return typeof part === "object" && part !== null && "type" in part && part.type === "tool-call";
     });
 
     expect(toolCallPart).toBeDefined();
@@ -1559,7 +1527,7 @@ describe("stream bridge contract", () => {
       parts.push(part);
     }
 
-    const errorPart = parts.find((part) => {
+    const errorPart = parts.find(part => {
       return typeof part === "object" && part !== null && "type" in part && part.type === "error";
     });
 
@@ -1571,7 +1539,7 @@ describe("stream bridge contract", () => {
 
     expect(String(errorPart.error)).toContain("Tool routing produced no tool call");
 
-    const finishPart = parts.find((part) => {
+    const finishPart = parts.find(part => {
       return typeof part === "object" && part !== null && "type" in part && part.type === "finish";
     });
 
@@ -1712,16 +1680,14 @@ describe("stream bridge contract", () => {
       parts.push(part);
     }
 
-    const errorPart = parts.find((part) => {
+    const errorPart = parts.find(part => {
       return typeof part === "object" && part !== null && "type" in part && part.type === "error";
     });
 
     expect(errorPart).toBeUndefined();
 
-    const textDelta = parts.find((part) => {
-      return (
-        typeof part === "object" && part !== null && "type" in part && part.type === "text-delta"
-      );
+    const textDelta = parts.find(part => {
+      return typeof part === "object" && part !== null && "type" in part && part.type === "text-delta";
     });
 
     expect(textDelta).toBeDefined();
@@ -1732,7 +1698,7 @@ describe("stream bridge contract", () => {
 
     expect(textDelta.delta).toBe("안녕하세요");
 
-    const finishPart = parts.find((part) => {
+    const finishPart = parts.find(part => {
       return typeof part === "object" && part !== null && "type" in part && part.type === "finish";
     });
 
@@ -1810,12 +1776,12 @@ describe("stream bridge contract", () => {
       parts.push(part);
     }
 
-    const errorPart = parts.find((part) => {
+    const errorPart = parts.find(part => {
       return typeof part === "object" && part !== null && "type" in part && part.type === "error";
     });
     expect(errorPart).toBeUndefined();
 
-    const finishPart = parts.find((part) => {
+    const finishPart = parts.find(part => {
       return typeof part === "object" && part !== null && "type" in part && part.type === "finish";
     });
     expect(finishPart).toBeDefined();

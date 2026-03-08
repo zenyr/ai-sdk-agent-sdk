@@ -29,10 +29,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === "object" && value !== null;
 };
 
-const readOptionsFromQueryCall = (
-  queryCalls: unknown[],
-  index: number,
-): Record<string, unknown> | undefined => {
+const readOptionsFromQueryCall = (queryCalls: unknown[], index: number): Record<string, unknown> | undefined => {
   const queryCall = queryCalls[index];
   if (!isRecord(queryCall)) {
     return undefined;
@@ -104,11 +101,7 @@ const importLanguageModelWithMockedRuntime = async (args: {
         const sessionId = state.sessionId;
         const promptMessageCount = state.promptMessageCount;
 
-        if (
-          typeof key !== "string" ||
-          typeof sessionId !== "string" ||
-          typeof promptMessageCount !== "number"
-        ) {
+        if (typeof key !== "string" || typeof sessionId !== "string" || typeof promptMessageCount !== "number") {
           return undefined;
         }
 
@@ -117,13 +110,9 @@ const importLanguageModelWithMockedRuntime = async (args: {
           sessionId,
           promptMessageCount,
           firstPromptMessageSignature:
-            typeof state.firstPromptMessageSignature === "string"
-              ? state.firstPromptMessageSignature
-              : undefined,
+            typeof state.firstPromptMessageSignature === "string" ? state.firstPromptMessageSignature : undefined,
           lastPromptMessageSignature:
-            typeof state.lastPromptMessageSignature === "string"
-              ? state.lastPromptMessageSignature
-              : undefined,
+            typeof state.lastPromptMessageSignature === "string" ? state.lastPromptMessageSignature : undefined,
         };
       },
       set: async ({
@@ -145,7 +134,7 @@ describe("agent-sdk-language-model", () => {
     const queryCalls: unknown[] = [];
     const warnings: string[] = [];
     console.warn = (...args) => {
-      warnings.push(args.map((value) => String(value)).join(" "));
+      warnings.push(args.map(value => String(value)).join(" "));
     };
 
     const model = await importLanguageModelWithMockedRuntime({
@@ -174,7 +163,7 @@ describe("agent-sdk-language-model", () => {
     const queryCalls: unknown[] = [];
     const warnings: string[] = [];
     console.warn = (...args) => {
-      warnings.push(args.map((value) => String(value)).join(" "));
+      warnings.push(args.map(value => String(value)).join(" "));
     };
 
     const model = await importLanguageModelWithMockedRuntime({

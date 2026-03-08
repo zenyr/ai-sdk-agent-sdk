@@ -2,10 +2,7 @@ export const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === "object" && value !== null;
 };
 
-export const readRecord = (
-  record: Record<string, unknown>,
-  key: string,
-): Record<string, unknown> | undefined => {
+export const readRecord = (record: Record<string, unknown>, key: string): Record<string, unknown> | undefined => {
   const value = record[key];
   if (!isRecord(value)) {
     return undefined;

@@ -11,10 +11,7 @@ import { claudeAgentRuntime } from "./adapters/claude-agent-runtime";
 import { fileIncomingSessionStore } from "./adapters/file-incoming-session-store";
 import { runGenerate } from "./application/generate";
 import { runStream } from "./application/stream";
-import {
-  findIncomingSessionState,
-  mergeIncomingSessionState,
-} from "./domain/incoming-session-state";
+import { findIncomingSessionState, mergeIncomingSessionState } from "./domain/incoming-session-state";
 import type { PromptSessionState } from "./domain/prompt-session-state";
 import { collectProviderSettingWarnings } from "./domain/provider-setting-warnings";
 import type { IncomingSessionState } from "./incoming-session-store";
@@ -98,7 +95,7 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
     console.warn(
       "ai-sdk-agent-sdk: session store " +
         `${args.operation} failed (model=${this.modelId}, conversation=${args.incomingSessionKey}): ` +
-        errorMessage,
+        errorMessage
     );
   }
 
@@ -137,9 +134,7 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
     });
   }
 
-  private async persistIncomingSessionState(
-    incomingSessionState: IncomingSessionState,
-  ): Promise<void> {
+  private async persistIncomingSessionState(incomingSessionState: IncomingSessionState): Promise<void> {
     this.incomingSessionStates = mergeIncomingSessionState({
       previousIncomingSessionStates: this.incomingSessionStates,
       nextIncomingSessionState: incomingSessionState,
@@ -171,7 +166,7 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
       runtime: this.runtime,
       providerSettingWarnings: this.providerSettingWarnings,
       previousSessionStates: () => this.promptSessionStates,
-      setPromptSessionStates: (promptSessionStates) => {
+      setPromptSessionStates: promptSessionStates => {
         this.promptSessionStates = promptSessionStates;
       },
       previousIncomingSessionStates: () => this.incomingSessionStates,
@@ -192,7 +187,7 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
       runtime: this.runtime,
       providerSettingWarnings: this.providerSettingWarnings,
       previousSessionStates: () => this.promptSessionStates,
-      setPromptSessionStates: (promptSessionStates) => {
+      setPromptSessionStates: promptSessionStates => {
         this.promptSessionStates = promptSessionStates;
       },
       previousIncomingSessionStates: () => this.incomingSessionStates,

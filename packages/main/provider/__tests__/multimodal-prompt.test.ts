@@ -8,7 +8,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> => {
 };
 
 const readFirstPromptMessage = async (
-  prompt: AsyncIterable<SDKUserMessage> | undefined,
+  prompt: AsyncIterable<SDKUserMessage> | undefined
 ): Promise<SDKUserMessage | undefined> => {
   if (prompt === undefined) {
     return undefined;
@@ -23,17 +23,17 @@ const readFirstPromptMessage = async (
 
 const readTextBlocks = (contentBlocks: unknown[]): string[] => {
   return contentBlocks
-    .filter((contentBlock) => {
+    .filter(contentBlock => {
       return isRecord(contentBlock) && contentBlock.type === "text";
     })
-    .map((contentBlock) => {
+    .map(contentBlock => {
       if (!isRecord(contentBlock) || typeof contentBlock.text !== "string") {
         return "";
       }
 
       return contentBlock.text;
     })
-    .filter((text) => {
+    .filter(text => {
       return text.length > 0;
     });
 };
@@ -101,16 +101,16 @@ describe("multimodal-prompt", () => {
     expect(textBlocks.length).toBeGreaterThan(1);
     expect(textBlocks[0]).toBe("Return JSON only");
     expect(
-      textBlocks.some((textBlock) => {
+      textBlocks.some(textBlock => {
         return (
           textBlock.includes("Previous conversation context") &&
           textBlock.includes("first question") &&
           textBlock.includes("first answer")
         );
-      }),
+      })
     ).toBeTrue();
 
-    const imageBlock = contentBlocks.find((contentBlock) => {
+    const imageBlock = contentBlocks.find(contentBlock => {
       return isRecord(contentBlock) && contentBlock.type === "image";
     });
 
@@ -163,9 +163,9 @@ describe("multimodal-prompt", () => {
 
     const textBlocks = readTextBlocks(firstMessage.message.content);
     expect(
-      textBlocks.some((textBlock) => {
+      textBlocks.some(textBlock => {
         return textBlock.includes("Previous conversation context");
-      }),
+      })
     ).toBeFalse();
   });
 

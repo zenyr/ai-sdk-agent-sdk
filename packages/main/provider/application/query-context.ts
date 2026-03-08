@@ -35,16 +35,13 @@ export const prepareQueryContext = async (args: {
   previousIncomingSessionStates: () => IncomingSessionState[];
   hydrateIncomingSessionState: (incomingSessionKey: string) => Promise<void>;
   buildToolBridgeConfig: (
-    tools: Array<{ name: string; description?: string; inputSchema: unknown }>,
+    tools: Array<{ name: string; description?: string; inputSchema: unknown }>
   ) => ToolBridgeConfig | undefined;
   buildPartialToolExecutorWarning: (missingExecutorToolNames: string[]) => SharedV3Warning;
 }): Promise<QueryContext> => {
   const completionMode = buildCompletionMode(args.options);
   const anthropicOptions = parseAnthropicProviderOptions(args.options);
-  const warnings = [
-    ...collectWarnings(args.options, completionMode),
-    ...args.providerSettingWarnings,
-  ];
+  const warnings = [...collectWarnings(args.options, completionMode), ...args.providerSettingWarnings];
 
   const incomingSessionKey = readIncomingSessionKey(args.options);
   if (incomingSessionKey !== undefined) {
@@ -64,14 +61,9 @@ export const prepareQueryContext = async (args: {
   let outputFormat: AgentQueryOptions["outputFormat"];
   const toolBridgeConfig =
     completionMode.type === "tools" ? args.buildToolBridgeConfig(completionMode.tools) : undefined;
-  const useNativeToolExecution =
-    completionMode.type === "tools" && toolBridgeConfig?.allToolsHaveExecutors === true;
+  const useNativeToolExecution = completionMode.type === "tools" && toolBridgeConfig?.allToolsHaveExecutors === true;
 
-  if (
-    completionMode.type === "tools" &&
-    toolBridgeConfig?.hasAnyExecutor === true &&
-    !useNativeToolExecution
-  ) {
+  if (completionMode.type === "tools" && toolBridgeConfig?.hasAnyExecutor === true && !useNativeToolExecution) {
     warnings.push(args.buildPartialToolExecutorWarning(toolBridgeConfig.missingExecutorToolNames));
   }
 
@@ -89,10 +81,7 @@ export const prepareQueryContext = async (args: {
   const multimodalQueryPrompt = await buildMultimodalQueryPrompt({
     promptMessages: args.options.prompt,
     resumeSessionId: promptQueryInput.resumeSessionId,
-    preambleText:
-      completionMode.type === "json"
-        ? "Return only JSON that matches the required schema."
-        : undefined,
+    preambleText: completionMode.type === "json" ? "Return only JSON that matches the required schema." : undefined,
   });
 
   if (multimodalQueryPrompt !== undefined) {

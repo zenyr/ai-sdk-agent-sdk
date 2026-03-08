@@ -10,7 +10,7 @@ import {
 describe("tool-routing-core", () => {
   test("parses explicit tool-calls envelope from text", () => {
     const parsed = parseStructuredEnvelopeFromText(
-      '{"type":"tool-calls","calls":[{"toolName":"weather","input":{"city":"seoul"}}]}',
+      '{"type":"tool-calls","calls":[{"toolName":"weather","input":{"city":"seoul"}}]}'
     );
 
     expect(isStructuredToolEnvelope(parsed)).toBeTrue();
@@ -61,7 +61,7 @@ describe("tool-routing-core", () => {
           },
         },
       ],
-      () => "tool-call-1",
+      () => "tool-call-1"
     );
 
     expect(content).toEqual([

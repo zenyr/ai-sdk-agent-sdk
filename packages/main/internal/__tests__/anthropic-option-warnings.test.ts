@@ -3,14 +3,12 @@ import type { SharedV3Warning } from "@ai-sdk/provider";
 
 import { collectAnthropicProviderOptionWarnings } from "../anthropic-option-warnings";
 
-const isFeatureWarning = (
-  warning: SharedV3Warning,
-): warning is Extract<SharedV3Warning, { feature: string }> => {
+const isFeatureWarning = (warning: SharedV3Warning): warning is Extract<SharedV3Warning, { feature: string }> => {
   return "feature" in warning;
 };
 
 const isUnsupportedFeatureWarning = (
-  warning: SharedV3Warning,
+  warning: SharedV3Warning
 ): warning is Extract<SharedV3Warning, { type: "unsupported" }> => {
   return warning.type === "unsupported";
 };
@@ -45,21 +43,15 @@ describe("collectAnthropicProviderOptionWarnings", () => {
 
     const features = warnings
       .filter(isFeatureWarning)
-      .map((warning) => warning.feature)
+      .map(warning => warning.feature)
       .sort();
 
-    expect(features).toEqual([
-      "providerOptions.anthropic.cacheControl",
-      "providerOptions.anthropic.sendReasoning",
-    ]);
+    expect(features).toEqual(["providerOptions.anthropic.cacheControl", "providerOptions.anthropic.sendReasoning"]);
 
     const cacheControlWarning = warnings.find(
       (warning): warning is Extract<SharedV3Warning, { type: "unsupported"; feature: string }> => {
-        return (
-          isUnsupportedFeatureWarning(warning) &&
-          warning.feature === "providerOptions.anthropic.cacheControl"
-        );
-      },
+        return isUnsupportedFeatureWarning(warning) && warning.feature === "providerOptions.anthropic.cacheControl";
+      }
     );
 
     expect(cacheControlWarning).toBeDefined();
@@ -68,9 +60,7 @@ describe("collectAnthropicProviderOptionWarnings", () => {
       expect(cacheControlWarning.details.includes("1h cache")).toBeTrue();
     }
 
-    const otherMessages = warnings
-      .filter((warning) => warning.type === "other")
-      .map((warning) => warning.message);
+    const otherMessages = warnings.filter(warning => warning.type === "other").map(warning => warning.message);
 
     expect(otherMessages.length).toBe(1);
     expect(otherMessages[0]?.includes("unknownOption")).toBeTrue();

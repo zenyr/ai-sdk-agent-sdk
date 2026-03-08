@@ -1,9 +1,5 @@
 import type { AnthropicMessageMetadata, AnthropicUsageIteration } from "@ai-sdk/anthropic";
-import type {
-  JSONObject,
-  LanguageModelV3FinishReason,
-  LanguageModelV3Usage,
-} from "@ai-sdk/provider";
+import type { JSONObject, LanguageModelV3FinishReason, LanguageModelV3Usage } from "@ai-sdk/provider";
 
 import { isRecord, readNumber, readString } from "../shared/type-readers";
 
@@ -66,9 +62,7 @@ export const mapUsage = (resultMessage: ResultMessageLike): LanguageModelV3Usage
   };
 };
 
-export const mapIterations = (
-  resultMessage: ResultMessageLike,
-): AnthropicUsageIteration[] | null => {
+export const mapIterations = (resultMessage: ResultMessageLike): AnthropicUsageIteration[] | null => {
   const usageRecord = isRecord(resultMessage.usage) ? resultMessage.usage : {};
   const iterations = usageRecord.iterations;
   if (!Array.isArray(iterations)) {
@@ -76,7 +70,7 @@ export const mapIterations = (
   }
 
   const mapped = iterations
-    .map((iteration) => {
+    .map(iteration => {
       if (!isRecord(iteration)) {
         return undefined;
       }
@@ -117,9 +111,7 @@ export const mapMetadata = (resultMessage: ResultMessageLike): AnthropicMessageM
   };
 };
 
-export const buildProviderMetadata = (
-  resultMessage: ResultMessageLike,
-): Record<string, JSONObject> => {
+export const buildProviderMetadata = (resultMessage: ResultMessageLike): Record<string, JSONObject> => {
   const metadata = mapMetadata(resultMessage);
 
   return {
@@ -128,7 +120,7 @@ export const buildProviderMetadata = (
       cacheCreationInputTokens: metadata.cacheCreationInputTokens,
       stopSequence: metadata.stopSequence,
       iterations:
-        metadata.iterations?.map((iteration) => {
+        metadata.iterations?.map(iteration => {
           return {
             type: iteration.type,
             inputTokens: iteration.inputTokens,
@@ -151,12 +143,7 @@ export const mapUsageFromMessageDelta = (usageValue: unknown): LanguageModelV3Us
   const cacheWrite = readNumber(usageValue, "cache_creation_input_tokens");
   const outputTokens = readNumber(usageValue, "output_tokens");
 
-  if (
-    totalInput === undefined &&
-    cacheRead === undefined &&
-    cacheWrite === undefined &&
-    outputTokens === undefined
-  ) {
+  if (totalInput === undefined && cacheRead === undefined && cacheWrite === undefined && outputTokens === undefined) {
     return undefined;
   }
 

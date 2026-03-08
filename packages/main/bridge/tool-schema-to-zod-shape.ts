@@ -27,7 +27,7 @@ const readRequiredSet = (schema: Record<string, unknown>): Set<string> => {
     return new Set<string>();
   }
 
-  const requiredKeys = requiredValues.filter((value) => {
+  const requiredKeys = requiredValues.filter(value => {
     return typeof value === "string";
   });
 
@@ -35,7 +35,7 @@ const readRequiredSet = (schema: Record<string, unknown>): Set<string> => {
 };
 
 const hasNullInTypeArray = (types: unknown[]): boolean => {
-  return types.some((value) => value === "null");
+  return types.some(value => value === "null");
 };
 
 const readEnumValues = (schema: Record<string, unknown>): unknown[] | undefined => {
@@ -47,10 +47,7 @@ const readEnumValues = (schema: Record<string, unknown>): unknown[] | undefined 
   return enumValues;
 };
 
-const applySchemaDescription = (
-  valueSchema: z.ZodTypeAny,
-  schema: Record<string, unknown>,
-): z.ZodTypeAny => {
+const applySchemaDescription = (valueSchema: z.ZodTypeAny, schema: Record<string, unknown>): z.ZodTypeAny => {
   const description = readString(schema, "description");
   if (description === undefined || description.length === 0) {
     return valueSchema;
@@ -59,16 +56,13 @@ const applySchemaDescription = (
   return valueSchema.describe(description);
 };
 
-const applyEnumConstraint = (
-  valueSchema: z.ZodTypeAny,
-  enumValues: unknown[] | undefined,
-): z.ZodTypeAny => {
+const applyEnumConstraint = (valueSchema: z.ZodTypeAny, enumValues: unknown[] | undefined): z.ZodTypeAny => {
   if (enumValues === undefined) {
     return valueSchema;
   }
 
-  return valueSchema.refine((value) => {
-    return enumValues.some((enumValue) => enumValue === value);
+  return valueSchema.refine(value => {
+    return enumValues.some(enumValue => enumValue === value);
   });
 };
 
@@ -96,10 +90,7 @@ const buildArraySchema = (schema: Record<string, unknown>): z.ZodTypeAny => {
   return z.array(buildValueSchema(itemSchema));
 };
 
-const buildSchemaFromType = (
-  schema: Record<string, unknown>,
-  jsonType: SupportedJsonType,
-): z.ZodTypeAny => {
+const buildSchemaFromType = (schema: Record<string, unknown>, jsonType: SupportedJsonType): z.ZodTypeAny => {
   if (jsonType === "string") {
     return z.string();
   }
@@ -140,13 +131,12 @@ const buildValueSchema = (schemaValue: unknown): z.ZodTypeAny => {
 
   const rawType = schemaValue.type;
   if (Array.isArray(rawType)) {
-    const nonNullTypes = rawType.filter((value) => {
+    const nonNullTypes = rawType.filter(value => {
       return isSupportedJsonType(value) && value !== "null";
     });
 
     const selectedType = nonNullTypes[0];
-    let valueSchema =
-      selectedType === undefined ? z.any() : buildSchemaFromType(schemaValue, selectedType);
+    let valueSchema = selectedType === undefined ? z.any() : buildSchemaFromType(schemaValue, selectedType);
 
     valueSchema = applyEnumConstraint(valueSchema, enumValues);
     valueSchema = applySchemaDescription(valueSchema, schemaValue);
@@ -174,9 +164,7 @@ const buildValueSchema = (schemaValue: unknown): z.ZodTypeAny => {
   return applySchemaDescription(z.any(), schemaValue);
 };
 
-export const buildZodRawShapeFromToolInputSchema = (
-  inputSchema: unknown,
-): Record<string, z.ZodTypeAny> => {
+export const buildZodRawShapeFromToolInputSchema = (inputSchema: unknown): Record<string, z.ZodTypeAny> => {
   if (!isRecord(inputSchema)) {
     return {};
   }

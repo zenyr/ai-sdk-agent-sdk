@@ -121,7 +121,7 @@ const parsePersistedIncomingSessionState = (value: unknown): IncomingSessionStat
 };
 
 const buildPersistedIncomingSessionState = (
-  incomingSessionState: IncomingSessionState,
+  incomingSessionState: IncomingSessionState
 ): PersistedIncomingSessionState => {
   return {
     version: 1,
@@ -144,7 +144,7 @@ class IncomingSessionStore {
       resolveCacheHomePath(),
       SESSION_CACHE_ROOT_DIRNAME,
       SESSION_CACHE_SUBDIR,
-      SESSION_CACHE_VERSION,
+      SESSION_CACHE_VERSION
     );
   }
 

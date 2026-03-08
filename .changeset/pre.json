@@ -6,7 +6,5 @@
     "@zenyr/ai-sdk-agent-sdk-adapter-v3": "0.0.3",
     "ai-sdk-agent-sdk": "0.0.4"
   },
-  "changesets": [
-    "test-rc-workflow"
-  ]
+  "changesets": ["test-rc-workflow"]
 }

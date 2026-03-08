@@ -18,15 +18,10 @@ export {
 
 type ParsedAnthropicProviderOptions = {
   effort?: "low" | "medium" | "high" | "max";
-  thinking?:
-    | { type: "adaptive" }
-    | { type: "disabled" }
-    | { type: "enabled"; budgetTokens?: number };
+  thinking?: { type: "adaptive" } | { type: "disabled" } | { type: "enabled"; budgetTokens?: number };
 };
 
-export const parseAnthropicProviderOptions = (
-  options: LanguageModelV3CallOptions,
-): ParsedAnthropicProviderOptions => {
+export const parseAnthropicProviderOptions = (options: LanguageModelV3CallOptions): ParsedAnthropicProviderOptions => {
   const providerOptions = options.providerOptions;
   if (!isRecord(providerOptions)) {
     return {};
@@ -77,13 +72,8 @@ export const parseAnthropicProviderOptions = (
   return parsed;
 };
 
-export const collectWarnings = (
-  options: LanguageModelV3CallOptions,
-  mode: CompletionMode,
-): SharedV3Warning[] => {
-  const warnings: SharedV3Warning[] = collectAnthropicProviderOptionWarnings(
-    options.providerOptions,
-  );
+export const collectWarnings = (options: LanguageModelV3CallOptions, mode: CompletionMode): SharedV3Warning[] => {
+  const warnings: SharedV3Warning[] = collectAnthropicProviderOptionWarnings(options.providerOptions);
 
   if (typeof options.temperature === "number") {
     warnings.push({
@@ -137,25 +127,21 @@ export const collectWarnings = (
     warnings.push({
       type: "compatibility",
       feature: "maxOutputTokens",
-      details:
-        "maxOutputTokens is best-effort only because claude-agent-sdk controls decoding internally.",
+      details: "maxOutputTokens is best-effort only because claude-agent-sdk controls decoding internally.",
     });
   }
 
   if (
     mode.type === "tools" &&
     options.tools !== undefined &&
-    options.tools.some(
-      (toolDefinition: LanguageModelV3FunctionTool | LanguageModelV3ProviderTool) => {
-        return toolDefinition.type === "provider";
-      },
-    )
+    options.tools.some((toolDefinition: LanguageModelV3FunctionTool | LanguageModelV3ProviderTool) => {
+      return toolDefinition.type === "provider";
+    })
   ) {
     warnings.push({
       type: "unsupported",
       feature: "provider-defined tools",
-      details:
-        "provider-defined tools are ignored when using claude-agent-sdk compatibility backend.",
+      details: "provider-defined tools are ignored when using claude-agent-sdk compatibility backend.",
     });
   }
 

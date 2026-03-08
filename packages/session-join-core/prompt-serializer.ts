@@ -30,8 +30,7 @@ export const contentPartToText = (part: unknown): string => {
   if (type === "tool-call") {
     const toolName = readString(part, "toolName") ?? "unknown_tool";
     const toolCallId = readString(part, "toolCallId");
-    const toolCallSuffix =
-      typeof toolCallId === "string" && toolCallId.length > 0 ? `#${toolCallId}` : "";
+    const toolCallSuffix = typeof toolCallId === "string" && toolCallId.length > 0 ? `#${toolCallId}` : "";
     const input = part.input;
     return `[tool-call:${toolName}${toolCallSuffix}] ${safeJsonStringify(input)}`;
   }
@@ -39,8 +38,7 @@ export const contentPartToText = (part: unknown): string => {
   if (type === "tool-result") {
     const toolName = readString(part, "toolName") ?? "unknown_tool";
     const toolCallId = readString(part, "toolCallId");
-    const toolCallSuffix =
-      typeof toolCallId === "string" && toolCallId.length > 0 ? `#${toolCallId}` : "";
+    const toolCallSuffix = typeof toolCallId === "string" && toolCallId.length > 0 ? `#${toolCallId}` : "";
     const output = part.output;
     return `[tool-result:${toolName}${toolCallSuffix}] ${safeJsonStringify(output)}`;
   }
@@ -55,7 +53,7 @@ export const serializeMessage = (message: LanguageModelV3Message): string => {
 
   const serializedContent = message.content
     .map(contentPartToText)
-    .filter((part) => {
+    .filter(part => {
       return part.length > 0;
     })
     .join("\n");
@@ -71,11 +69,9 @@ export const serializePromptMessages = (prompt: LanguageModelV3Message[]): strin
   return prompt.map(serializeMessage);
 };
 
-export const serializePromptMessagesWithoutSystem = (
-  prompt: LanguageModelV3Message[],
-): string[] => {
+export const serializePromptMessagesWithoutSystem = (prompt: LanguageModelV3Message[]): string[] => {
   return prompt
-    .filter((message) => {
+    .filter(message => {
       return message.role !== "system";
     })
     .map(serializeMessage);
@@ -91,7 +87,7 @@ const serializeMessageForResumeQuery = (message: LanguageModelV3Message): string
   }
 
   const serializedToolCalls = message.content
-    .filter((part) => {
+    .filter(part => {
       if (!isRecord(part)) {
         return false;
       }
@@ -99,7 +95,7 @@ const serializeMessageForResumeQuery = (message: LanguageModelV3Message): string
       return readString(part, "type") === "tool-call";
     })
     .map(contentPartToText)
-    .filter((part) => {
+    .filter(part => {
       return part.length > 0;
     })
     .join("\n");
@@ -111,27 +107,21 @@ const serializeMessageForResumeQuery = (message: LanguageModelV3Message): string
   return `[assistant]\n${serializedToolCalls}`;
 };
 
-export const serializePromptMessagesForResumeQuery = (
-  prompt: LanguageModelV3Message[],
-): string[] => {
-  return prompt
-    .map(serializeMessageForResumeQuery)
-    .filter((serializedMessage): serializedMessage is string => {
-      return typeof serializedMessage === "string" && serializedMessage.length > 0;
-    });
+export const serializePromptMessagesForResumeQuery = (prompt: LanguageModelV3Message[]): string[] => {
+  return prompt.map(serializeMessageForResumeQuery).filter((serializedMessage): serializedMessage is string => {
+    return typeof serializedMessage === "string" && serializedMessage.length > 0;
+  });
 };
 
-export const extractSystemPromptFromMessages = (
-  prompt: LanguageModelV3Message[],
-): string | undefined => {
+export const extractSystemPromptFromMessages = (prompt: LanguageModelV3Message[]): string | undefined => {
   const systemParts = prompt
-    .filter((message) => {
+    .filter(message => {
       return message.role === "system";
     })
-    .map((message) => {
+    .map(message => {
       return message.content.trim();
     })
-    .filter((content) => {
+    .filter(content => {
       return content.length > 0;
     });
 

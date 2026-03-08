@@ -1,11 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import {
-  anthropic,
-  createAnthropic,
-  forwardAnthropicContainerIdFromLastStep,
-  VERSION,
-} from "../index";
+import { anthropic, createAnthropic, forwardAnthropicContainerIdFromLastStep, VERSION } from "../index";
 
 describe("adapter-v2 exports contract", () => {
   test("exports provider factory and helper", () => {

@@ -24,9 +24,7 @@ type AppendPendingBridgeToolInputDeltaArgs = {
   delta: string;
 };
 
-export const appendPendingBridgeToolInputDelta = (
-  args: AppendPendingBridgeToolInputDeltaArgs,
-): boolean => {
+export const appendPendingBridgeToolInputDelta = (args: AppendPendingBridgeToolInputDeltaArgs): boolean => {
   const pendingBridgeToolInput = args.pendingBridgeToolInputs.get(args.id);
   if (pendingBridgeToolInput === undefined) {
     return false;
@@ -47,7 +45,7 @@ type FinishedBridgeToolInput = {
 };
 
 export const finishPendingBridgeToolInput = (
-  args: FinishPendingBridgeToolInputArgs,
+  args: FinishPendingBridgeToolInputArgs
 ): FinishedBridgeToolInput | undefined => {
   const pendingBridgeToolInput = args.pendingBridgeToolInputs.get(args.id);
   if (pendingBridgeToolInput === undefined) {

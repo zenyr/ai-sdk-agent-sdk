@@ -55,12 +55,7 @@ const findBestPromptSessionState = (args: {
   let bestState: PromptSessionState | undefined;
 
   for (const sessionState of args.previousSessionStates) {
-    if (
-      !hasSerializedPromptPrefix(
-        sessionState.serializedPromptMessages,
-        args.serializedPromptMessages,
-      )
-    ) {
+    if (!hasSerializedPromptPrefix(sessionState.serializedPromptMessages, args.serializedPromptMessages)) {
       continue;
     }
 
@@ -79,14 +74,14 @@ export const mergePromptSessionState = (args: {
   previousSessionStates: PromptSessionState[];
   nextSessionState: PromptSessionState;
 }): PromptSessionState[] => {
-  const dedupedStates = args.previousSessionStates.filter((sessionState) => {
+  const dedupedStates = args.previousSessionStates.filter(sessionState => {
     if (sessionState.sessionId === args.nextSessionState.sessionId) {
       return false;
     }
 
     return !hasIdenticalSerializedPrompt(
       sessionState.serializedPromptMessages,
-      args.nextSessionState.serializedPromptMessages,
+      args.nextSessionState.serializedPromptMessages
     );
   });
 
@@ -98,9 +93,7 @@ export const buildPromptQueryInput = (args: {
   previousSessionStates: PromptSessionState[];
 }): PromptQueryInput => {
   const serializedPromptMessages = serializePromptMessages(args.promptMessages);
-  const serializedPromptMessagesForQuery = serializePromptMessagesWithoutSystem(
-    args.promptMessages,
-  );
+  const serializedPromptMessagesForQuery = serializePromptMessagesWithoutSystem(args.promptMessages);
   const fullPrompt = joinSerializedPromptMessages(serializedPromptMessagesForQuery);
   const previousSessionState = findBestPromptSessionState({
     serializedPromptMessages,
@@ -131,12 +124,10 @@ export const buildPromptQueryInput = (args: {
   }
 
   const appendedSourceMessages = args.promptMessages.slice(previousPromptMessages.length);
-  const appendedPromptMessagesForQuery =
-    serializePromptMessagesForResumeQuery(appendedSourceMessages);
+  const appendedPromptMessagesForQuery = serializePromptMessagesForResumeQuery(appendedSourceMessages);
 
   if (appendedPromptMessagesForQuery.length === 0) {
-    const fallbackAppendedPromptMessages =
-      serializePromptMessagesWithoutSystem(appendedSourceMessages);
+    const fallbackAppendedPromptMessages = serializePromptMessagesWithoutSystem(appendedSourceMessages);
 
     if (fallbackAppendedPromptMessages.length === 0) {
       return {
@@ -159,9 +150,7 @@ export const buildPromptQueryInput = (args: {
   };
 };
 
-export const buildPromptQueryInputWithoutResume = (
-  promptMessages: LanguageModelV3Message[],
-): PromptQueryInput => {
+export const buildPromptQueryInputWithoutResume = (promptMessages: LanguageModelV3Message[]): PromptQueryInput => {
   const serializedPromptMessagesForQuery = serializePromptMessagesWithoutSystem(promptMessages);
 
   return {

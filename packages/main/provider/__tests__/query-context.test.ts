@@ -65,7 +65,7 @@ describe("query-context", () => {
       providerSettingWarnings: [],
       previousSessionStates: () => [],
       previousIncomingSessionStates: () => [previousIncomingSessionState],
-      hydrateIncomingSessionState: async (incomingSessionKey) => {
+      hydrateIncomingSessionState: async incomingSessionKey => {
         hydratedKeys.push(incomingSessionKey);
       },
       buildToolBridgeConfig: () => {
@@ -112,14 +112,12 @@ describe("query-context", () => {
 
     expect(queryContext.completionMode.type).toBe("json");
     expect(typeof queryContext.queryPrompt).toBe("string");
-    expect(
-      queryContext.prompt.startsWith("Return only JSON that matches the required schema."),
-    ).toBeTrue();
+    expect(queryContext.prompt.startsWith("Return only JSON that matches the required schema.")).toBeTrue();
     expect(queryContext.outputFormat).toBeUndefined();
     expect(
-      queryContext.warnings.some((warning) => {
+      queryContext.warnings.some(warning => {
         return warning.type === "compatibility" && warning.feature === "responseFormat.json";
-      }),
+      })
     ).toBeTrue();
   });
 
@@ -145,7 +143,7 @@ describe("query-context", () => {
           missingExecutorToolNames: ["lookup_weather"],
         };
       },
-      buildPartialToolExecutorWarning: (missingExecutorToolNames) => {
+      buildPartialToolExecutorWarning: missingExecutorToolNames => {
         partialWarningCalls += 1;
         expect(missingExecutorToolNames).toEqual(["lookup_weather"]);
         return partialExecutorWarning;
@@ -189,9 +187,9 @@ describe("query-context", () => {
     expect(queryContext.useNativeToolExecution).toBeTrue();
     expect(partialWarningCalled).toBeFalse();
     expect(
-      queryContext.warnings.some((warning) => {
+      queryContext.warnings.some(warning => {
         return warning.type === "compatibility" && warning.feature === "toolExecutors.partial";
-      }),
+      })
     ).toBeFalse();
   });
 
@@ -227,9 +225,7 @@ describe("query-context", () => {
 
   test("createAbortBridge mirrors external abort signal", () => {
     const externalAbortController = new AbortController();
-    const { abortController, cleanupAbortListener } = createAbortBridge(
-      externalAbortController.signal,
-    );
+    const { abortController, cleanupAbortListener } = createAbortBridge(externalAbortController.signal);
 
     expect(abortController.signal.aborted).toBeFalse();
     externalAbortController.abort();

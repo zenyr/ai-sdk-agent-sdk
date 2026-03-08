@@ -7,14 +7,7 @@ import type {
   LanguageModelV3StreamResult,
 } from "@ai-sdk/provider";
 
-type V2FinishReason =
-  | "stop"
-  | "length"
-  | "content-filter"
-  | "tool-calls"
-  | "error"
-  | "other"
-  | "unknown";
+type V2FinishReason = "stop" | "length" | "content-filter" | "tool-calls" | "error" | "other" | "unknown";
 
 type LegacyFinishOverlay = {
   finish: V2FinishReason;
@@ -24,12 +17,9 @@ type LegacyFinishOverlay = {
 
 type OpenCodeCompatGenerateResult = LanguageModelV3GenerateResult & LegacyFinishOverlay;
 
-type OpenCodeCompatFinishPart = Extract<LanguageModelV3StreamPart, { type: "finish" }> &
-  LegacyFinishOverlay;
+type OpenCodeCompatFinishPart = Extract<LanguageModelV3StreamPart, { type: "finish" }> & LegacyFinishOverlay;
 
-type OpenCodeCompatStreamPart =
-  | Exclude<LanguageModelV3StreamPart, { type: "finish" }>
-  | OpenCodeCompatFinishPart;
+type OpenCodeCompatStreamPart = Exclude<LanguageModelV3StreamPart, { type: "finish" }> | OpenCodeCompatFinishPart;
 
 type OpenCodeCompatStreamResult = Omit<LanguageModelV3StreamResult, "stream"> & {
   stream: ReadableStream<OpenCodeCompatStreamPart>;
@@ -40,10 +30,7 @@ type OpenCodeCompatLanguageModelType = Omit<LanguageModelV3, "doGenerate" | "doS
   doStream: (options: LanguageModelV3CallOptions) => Promise<OpenCodeCompatStreamResult>;
 };
 
-export type OpenCodeCompatAnthropicProvider = Omit<
-  AnthropicProvider,
-  "languageModel" | "chat" | "messages"
-> & {
+export type OpenCodeCompatAnthropicProvider = Omit<AnthropicProvider, "languageModel" | "chat" | "messages"> & {
   (modelId: string): OpenCodeCompatLanguageModelType;
   languageModel: (modelId: string) => OpenCodeCompatLanguageModelType;
   chat: (modelId: string) => OpenCodeCompatLanguageModelType;
@@ -132,7 +119,7 @@ class OpenCodeCompatLanguageModel {
             rawFinishReason: legacyFinish.rawFinishReason,
           });
         },
-      }),
+      })
     );
 
     return {
@@ -142,9 +129,7 @@ class OpenCodeCompatLanguageModel {
   }
 }
 
-export const withOpenCodeCompatibility = (
-  provider: AnthropicProvider,
-): OpenCodeCompatAnthropicProvider => {
+export const withOpenCodeCompatibility = (provider: AnthropicProvider): OpenCodeCompatAnthropicProvider => {
   const createLanguageModel = (modelId: string): OpenCodeCompatLanguageModelType => {
     return new OpenCodeCompatLanguageModel(provider(modelId));
   };
