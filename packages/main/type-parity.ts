@@ -22,7 +22,7 @@ type AssertNever<T extends never> = T;
 type AssertAssignable<From, _To extends From> = true;
 
 // Extensions that exist in local but not in upstream (intentional additions)
-type LocalOnlyKeys = "isOpenCode";
+type LocalOnlyKeys = "withOpenCodeCompatibility";
 
 type MissingInLocal = Exclude<keyof UpstreamAnthropic, keyof LocalAnthropic>;
 type MissingInUpstream = Exclude<

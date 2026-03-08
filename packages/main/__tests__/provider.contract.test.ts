@@ -1,19 +1,8 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, mock, test } from "bun:test";
 import { anthropic as upstreamAnthropic } from "@ai-sdk/anthropic";
 
-const originalOpenCode = process.env.OPENCODE;
-
-beforeEach(() => {
-  delete process.env.OPENCODE;
-});
-
 afterEach(() => {
-  if (originalOpenCode === undefined) {
-    delete process.env.OPENCODE;
-    return;
-  }
-
-  process.env.OPENCODE = originalOpenCode;
+  mock.restore();
 });
 
 const loadMainModule = async () => {
@@ -72,6 +61,63 @@ describe("runtime surface contract", () => {
     expect(model.specificationVersion).toBe("v3");
     expect(model.provider).toBe("anthropic.messages");
     expect(model.modelId).toBe("claude-3-5-haiku-latest");
+  });
+
+  test("root entry exposes explicit compat helper only", async () => {
+    const mainModule = await loadMainModule();
+
+    expect("withOpenCodeCompatibility" in mainModule).toBeTrue();
+    expect("isOpenCode" in mainModule).toBeFalse();
+  });
+
+  test("root entry adds legacy finish overlay for compat consumers", async () => {
+    mock.module("@anthropic-ai/claude-agent-sdk", () => {
+      return {
+        query: async function* () {
+          yield {
+            type: "result",
+            subtype: "success",
+            stop_reason: "end_turn",
+            result: "ok",
+            usage: {
+              input_tokens: 10,
+              output_tokens: 5,
+              cache_read_input_tokens: 0,
+              cache_creation_input_tokens: 0,
+            },
+            duration_ms: 1,
+            duration_api_ms: 1,
+            is_error: false,
+            num_turns: 1,
+            total_cost_usd: 0,
+            modelUsage: {},
+            permission_denials: [],
+            uuid: "uuid-root-compat",
+            session_id: "session-root-compat",
+          };
+        },
+      };
+    });
+
+    const { anthropic } = await loadMainModule();
+    const result = await anthropic("claude-3-5-haiku-latest").doGenerate({
+      prompt: [
+        {
+          role: "user",
+          content: [{ type: "text", text: "hello" }],
+        },
+      ],
+    });
+
+    expect(result.finishReason.unified).toBe("stop");
+    expect("finish" in result).toBeTrue();
+
+    if (!("finish" in result) || !("reason" in result)) {
+      return;
+    }
+
+    expect(result.finish).toBe("stop");
+    expect(result.reason).toBe("end_turn");
   });
 
   test("forward helper returns undefined with no container metadata", async () => {
