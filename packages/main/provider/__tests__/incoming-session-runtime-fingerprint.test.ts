@@ -163,6 +163,7 @@ describe("incoming-session runtime fingerprint", () => {
       storeSetCalls: leftStoreSetCalls,
       settings: {
         baseURL: "http://localhost:5470/claude",
+        apiKey: "api-key-left",
       },
       getStore: async (incomingSessionKey, runtimeFingerprint) => {
         return persistedStates.get(`${runtimeFingerprint}:${incomingSessionKey}`);
@@ -183,7 +184,8 @@ describe("incoming-session runtime fingerprint", () => {
       queryCalls: rightQueryCalls,
       storeGetCalls: rightStoreGetCalls,
       settings: {
-        baseURL: "http://localhost:5471/claude",
+        baseURL: "http://localhost:5470/claude",
+        apiKey: "api-key-right",
       },
       getStore: async (incomingSessionKey, runtimeFingerprint) => {
         return persistedStates.get(`${runtimeFingerprint}:${incomingSessionKey}`);

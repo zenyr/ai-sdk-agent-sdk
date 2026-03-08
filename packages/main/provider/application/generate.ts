@@ -128,6 +128,10 @@ export const runGenerate = async (args: {
   const recoveredToolCallsFromStream: LanguageModelV3Content[] = [];
   let runtimeQueryError: { message: string; raw: string } | undefined;
 
+  const readFallbackResultText = (message: SDKResultMessage): string => {
+    return "result" in message && typeof message.result === "string" ? message.result : "";
+  };
+
   const appendRecoveredToolCall = (toolCall: { toolCallId: string; toolName: string; rawInput: string }) => {
     recoveredToolCallsFromStream.push({
       type: "tool-call",
@@ -339,7 +343,10 @@ export const runGenerate = async (args: {
       const text = assistantText.length > 0 ? assistantText : finalResultMessage.result;
       content = [{ type: "text", text }];
     } else {
-      const errorText = finalResultMessage.errors.join("\n");
+      const errorText =
+        finalResultMessage.errors.length > 0
+          ? finalResultMessage.errors.join("\n")
+          : readFallbackResultText(finalResultMessage);
       content = [
         {
           type: "text",
@@ -517,7 +524,10 @@ export const runGenerate = async (args: {
     }
 
     if (content.length === 0) {
-      const errorText = finalResultMessage.errors.join("\n");
+      const errorText =
+        finalResultMessage.errors.length > 0
+          ? finalResultMessage.errors.join("\n")
+          : readFallbackResultText(finalResultMessage);
       content = [{ type: "text", text: errorText }];
       finishReason = {
         unified: "error",

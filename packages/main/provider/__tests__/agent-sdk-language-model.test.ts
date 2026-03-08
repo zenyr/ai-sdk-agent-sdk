@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import type { LanguageModelV3Message } from "@ai-sdk/provider";
+import type { ToolExecutorMap } from "../../shared/tool-executor";
 import type { IncomingSessionState } from "../incoming-session-store";
 
 const originalConsoleWarn = console.warn;
@@ -14,6 +15,22 @@ const userMessage = (text: string): LanguageModelV3Message => {
     role: "user",
     content: [{ type: "text", text }],
   };
+};
+
+const weatherTool = {
+  type: "function" as const,
+  name: "lookup_weather",
+  description: "Lookup weather",
+  inputSchema: {
+    type: "object",
+    additionalProperties: false,
+    required: ["city"],
+    properties: {
+      city: {
+        type: "string",
+      },
+    },
+  },
 };
 
 const buildMockResultUsage = () => {
@@ -134,7 +151,27 @@ const importLanguageModelWithMockedRuntime = async (args: {
   });
 };
 
-const createLanguageModelWithRuntime = async (runtime: { query: (request: unknown) => AsyncIterable<unknown> }) => {
+const createLanguageModelWithRuntime = async (
+  runtime: { query: (request: unknown) => AsyncIterable<unknown> },
+  toolExecutors?: ToolExecutorMap,
+  options?: { mockNativeToolBridge?: boolean }
+) => {
+  if (options?.mockNativeToolBridge === true) {
+    mock.module("@anthropic-ai/claude-agent-sdk", () => {
+      return {
+        createSdkMcpServer: (args: unknown) => args,
+        tool: (name: string, description: string, inputSchema: unknown, handler: unknown) => {
+          return {
+            name,
+            description,
+            inputSchema,
+            handler,
+          };
+        },
+      };
+    });
+  }
+
   const moduleId = `../agent-sdk-language-model.ts?runtime-${Date.now()}-${Math.random()}`;
   const { AgentSdkAnthropicLanguageModel } = await import(moduleId);
 
@@ -143,6 +180,7 @@ const createLanguageModelWithRuntime = async (runtime: { query: (request: unknow
     provider: "anthropic.messages",
     settings: {},
     idGenerator: () => `id-${Date.now()}-${Math.random()}`,
+    toolExecutors,
     runtime,
     sessionStore: {
       get: async () => {
@@ -301,5 +339,38 @@ describe("agent-sdk-language-model", () => {
     }
 
     expect(finishPart.finishReason).toEqual({ unified: "error", raw: "runtime-query-error" });
+  });
+
+  test("falls back to result text for native tool execution errors without error entries", async () => {
+    const model = await createLanguageModelWithRuntime(
+      {
+        async *query() {
+          yield {
+            type: "result",
+            subtype: "error_during_execution",
+            stop_reason: "end_turn",
+            result: "Tool execution failed after provider-side execution.",
+            errors: [],
+            usage: buildMockResultUsage(),
+            session_id: "session-native-tool-error",
+          };
+        },
+      },
+      {
+        lookup_weather: async () => {
+          return { ok: true };
+        },
+      },
+      { mockNativeToolBridge: true }
+    );
+
+    const result = await model.doGenerate({
+      prompt: [userMessage("check weather")],
+      tools: [weatherTool],
+      toolChoice: { type: "required" },
+    });
+
+    expect(result.finishReason).toEqual({ unified: "error", raw: "error_during_execution" });
+    expect(readTextContent(result)).toBe("Tool execution failed after provider-side execution.");
   });
 });

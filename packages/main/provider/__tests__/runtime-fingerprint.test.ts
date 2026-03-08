@@ -59,4 +59,40 @@ describe("runtime-fingerprint", () => {
 
     expect(left).not.toBe(right);
   });
+
+  test("changes when apiKey changes", () => {
+    const left = buildRuntimeFingerprint({
+      provider: "anthropic.messages",
+      settings: {
+        apiKey: "api-key-a",
+      },
+    });
+
+    const right = buildRuntimeFingerprint({
+      provider: "anthropic.messages",
+      settings: {
+        apiKey: "api-key-b",
+      },
+    });
+
+    expect(left).not.toBe(right);
+  });
+
+  test("changes when authToken changes", () => {
+    const left = buildRuntimeFingerprint({
+      provider: "anthropic.messages",
+      settings: {
+        authToken: "auth-token-a",
+      },
+    });
+
+    const right = buildRuntimeFingerprint({
+      provider: "anthropic.messages",
+      settings: {
+        authToken: "auth-token-b",
+      },
+    });
+
+    expect(left).not.toBe(right);
+  });
 });
