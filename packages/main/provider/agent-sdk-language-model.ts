@@ -14,6 +14,7 @@ import { runStream } from "./application/stream";
 import { findIncomingSessionState, mergeIncomingSessionState } from "./domain/incoming-session-state";
 import type { PromptSessionState } from "./domain/prompt-session-state";
 import { collectProviderSettingWarnings } from "./domain/provider-setting-warnings";
+import { buildRuntimeFingerprint } from "./domain/runtime-fingerprint";
 import type { IncomingSessionState } from "./incoming-session-store";
 import type { AgentRuntimePort } from "./ports/agent-runtime-port";
 import type { IncomingSessionStorePort } from "./ports/incoming-session-store-port";
@@ -51,6 +52,7 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
   private readonly toolExecutors: ToolExecutorMap | undefined;
   private readonly maxTurns: number | undefined;
   private readonly runtime: AgentRuntimePort;
+  private readonly runtimeFingerprint: string;
   private readonly sessionStore: IncomingSessionStorePort;
   private readonly providerSettingWarnings: SharedV3Warning[];
   private readonly warnedSessionStoreFailures = new Set<string>();
@@ -74,6 +76,10 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
     this.toolExecutors = args.toolExecutors;
     this.maxTurns = args.maxTurns;
     this.runtime = args.runtime ?? claudeAgentRuntime;
+    this.runtimeFingerprint = buildRuntimeFingerprint({
+      provider: this.provider,
+      settings: this.settings,
+    });
     this.sessionStore = args.sessionStore ?? fileIncomingSessionStore;
     this.providerSettingWarnings = collectProviderSettingWarnings(this.settings);
     this.supportedUrls = DEFAULT_SUPPORTED_URLS;
@@ -113,6 +119,7 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
     try {
       persistedIncomingSessionState = await this.sessionStore.get({
         modelId: this.modelId,
+        runtimeFingerprint: this.runtimeFingerprint,
         incomingSessionKey,
       });
     } catch (error) {
@@ -143,6 +150,7 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
     try {
       await this.sessionStore.set({
         modelId: this.modelId,
+        runtimeFingerprint: this.runtimeFingerprint,
         incomingSessionKey: incomingSessionState.incomingSessionKey,
         state: incomingSessionState,
       });

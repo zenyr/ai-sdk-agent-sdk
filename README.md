@@ -40,7 +40,7 @@ Add the following entry inside the `providers` object in `~/.config/opencode/ope
       "npm": "ai-sdk-agent-sdk",
       "name": "❋ Claude Code",
       "options": {
-        "setCacheKey": true
+        "setCacheKey": true,
         // "baseURL": "https://your-proxy-or-custom-endpoint"
       },
       "models": {
@@ -89,7 +89,8 @@ Add the following entry inside the `providers` object in `~/.config/opencode/ope
 }
 ```
 
-<<<<<<< HEAD
+`setCacheKey: true` is recommended when the caller can provide a stable conversation key. This package reads `promptCacheKey` / `x-conversation-id`, maps that key to a persisted Claude Agent SDK `sessionId`, and resumes the same Claude session on later turns. Session reuse is isolated by model plus runtime fingerprint, including `baseURL`, so the same cache key does not cross-resume into a different upstream proxy.
+
 The `npm` field tells OpenCode to load the package root compatibility entry. This keeps the legacy finish overlays that OpenCode expects. Claude Code must already be authenticated.
 
 ## Usage as a pure provider core
