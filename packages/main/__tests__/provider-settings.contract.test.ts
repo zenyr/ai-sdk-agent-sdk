@@ -287,11 +287,22 @@ describe("provider settings contract", () => {
   test("forwards experimental_agentSdk provider settings into query options", async () => {
     const queryCalls: unknown[] = [];
     const { createAnthropic } = await importIndexWithMockedQuery({ queryCalls });
+    const hookCallback = async () => ({ continue: true });
+    const hooks = {
+      PreToolUse: [
+        {
+          hooks: [hookCallback],
+        },
+      ],
+    };
+    const plugins = [{ type: "local", path: "./test-plugin" }];
 
     const provider = createAnthropic({
       experimental_agentSdk: {
         cwd: "/tmp/custom-cwd",
         debug: true,
+        hooks,
+        plugins,
       },
     });
 
@@ -314,6 +325,8 @@ describe("provider settings contract", () => {
 
     expect(options.cwd).toBe("/tmp/custom-cwd");
     expect(options.debug).toBeTrue();
+    expect(options.hooks).toBe(hooks);
+    expect(options.plugins).toBe(plugins);
   });
 
   test("preserves custom provider name", async () => {
