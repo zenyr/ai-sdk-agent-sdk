@@ -1,4 +1,3 @@
-import type { AnthropicProviderSettings } from "@ai-sdk/anthropic";
 import type {
   LanguageModelV3,
   LanguageModelV3CallOptions,
@@ -7,7 +6,7 @@ import type {
   SharedV3Warning,
 } from "@ai-sdk/provider";
 import { DEFAULT_SUPPORTED_URLS } from "../shared/constants";
-import type { ToolExecutorMap } from "../shared/tool-executor";
+import type { AgentSdkProviderSettings, ToolExecutorMap } from "../shared/tool-executor";
 import { claudeAgentRuntime } from "./adapters/claude-agent-runtime";
 import { fileIncomingSessionStore } from "./adapters/file-incoming-session-store";
 import { runGenerate } from "./application/generate";
@@ -50,7 +49,7 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
   readonly modelId: string;
   readonly supportedUrls: Record<string, RegExp[]>;
 
-  private readonly settings: AnthropicProviderSettings;
+  private readonly settings: AgentSdkProviderSettings;
   private readonly idGenerator: () => string;
   private readonly toolExecutors: ToolExecutorMap | undefined;
   private readonly maxTurns: number | undefined;
@@ -64,7 +63,7 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
   constructor(args: {
     modelId: string;
     provider: string;
-    settings: AnthropicProviderSettings;
+    settings: AgentSdkProviderSettings;
     idGenerator: () => string;
     toolExecutors?: ToolExecutorMap;
     maxTurns?: number;

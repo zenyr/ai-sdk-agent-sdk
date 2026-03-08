@@ -76,4 +76,35 @@ describe("query-options", () => {
     expect(queryOptions.includePartialMessages).toBeTrue();
     expect(queryOptions.permissionMode).toBe("dontAsk");
   });
+
+  test("forwards experimental_agentSdk options while preserving adapter-owned fields", () => {
+    const queryOptions = buildAgentQueryOptions({
+      modelId: "claude-3-5-haiku-latest",
+      settings: {
+        experimental_agentSdk: {
+          cwd: "/tmp/agent-sdk-e2e",
+          permissionMode: "plan",
+          settingSources: ["project"],
+          debug: true,
+        },
+      },
+      allowedTools: ["tool-1"],
+      mcpServers: {},
+      resumeSessionId: "session-1",
+      systemPrompt: "system",
+      maxTurns: 9,
+      useNativeToolExecution: false,
+      abortController: new AbortController(),
+      outputFormat: undefined,
+      effort: undefined,
+      thinking: undefined,
+      includePartialMessages: false,
+    });
+
+    expect(queryOptions.cwd).toBe("/tmp/agent-sdk-e2e");
+    expect(queryOptions.permissionMode).toBe("dontAsk");
+    expect(queryOptions.settingSources).toEqual([]);
+    expect(queryOptions.debug).toBeTrue();
+    expect(queryOptions.maxTurns).toBe(1);
+  });
 });

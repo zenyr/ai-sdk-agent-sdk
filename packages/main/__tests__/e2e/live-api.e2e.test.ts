@@ -22,6 +22,12 @@ const isTextContent = (
   return part.type === "text";
 };
 
+const isToolCallContent = (
+  part: LanguageModelV3Content,
+): part is Extract<LanguageModelV3Content, { type: "tool-call" }> => {
+  return part.type === "tool-call";
+};
+
 const isFinishPart = (
   part: LanguageModelV3StreamPart,
 ): part is Extract<LanguageModelV3StreamPart, { type: "finish" }> => {
@@ -36,6 +42,10 @@ const isErrorPart = (
 
 const resolveModelId = (): string => {
   return readNonEmptyEnv("AI_SDK_AGENT_E2E_MODEL") ?? DEFAULT_MODEL_ID;
+};
+
+const createConversationToken = (): string => {
+  return `token-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
 };
 
 const resolveProvider = () => {
@@ -141,5 +151,108 @@ describe("real api e2e", () => {
     }
 
     expect(outputTokens).toBeGreaterThan(0);
+  });
+
+  e2eTest("doGenerate returns tool-call content with required tool choice", async () => {
+    const provider = resolveProvider();
+    const model = provider(resolveModelId());
+    const expectedCity = "Seoul";
+
+    const result = await model.doGenerate({
+      prompt: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "text",
+              text: "Call the tool exactly once with city set to Seoul. Do not output plain text.",
+            },
+          ],
+        },
+      ],
+      tools: [
+        {
+          type: "function",
+          name: "lookup_weather",
+          description: "Lookup weather by city",
+          inputSchema: {
+            type: "object",
+            additionalProperties: false,
+            required: ["city"],
+            properties: {
+              city: {
+                type: "string",
+              },
+            },
+          },
+        },
+      ],
+      toolChoice: { type: "required" },
+    });
+
+    expect(result.finishReason.unified).toBe("tool-calls");
+
+    const firstToolCall = result.content.find(isToolCallContent);
+    expect(firstToolCall).toBeDefined();
+
+    if (firstToolCall === undefined) {
+      return;
+    }
+
+    expect(firstToolCall.toolName).toBe("lookup_weather");
+    expect(firstToolCall.input).toContain(expectedCity);
+  });
+
+  e2eTest("doGenerate resumes conversation using x-conversation-id", async () => {
+    const provider = resolveProvider();
+    const model = provider(resolveModelId());
+    const rememberedToken = createConversationToken();
+    const conversationId = `conv-${createConversationToken()}`;
+
+    const firstTurn = await model.doGenerate({
+      prompt: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "text",
+              text: `Remember this token exactly for this conversation: ${rememberedToken}. Reply with only OK.`,
+            },
+          ],
+        },
+      ],
+      headers: {
+        "x-conversation-id": conversationId,
+      },
+    });
+
+    expect(firstTurn.finishReason.unified).not.toBe("error");
+
+    const secondTurn = await model.doGenerate({
+      prompt: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "text",
+              text: "Reply with only the remembered token from earlier in this same conversation.",
+            },
+          ],
+        },
+      ],
+      headers: {
+        "x-conversation-id": conversationId,
+      },
+    });
+
+    expect(secondTurn.finishReason.unified).not.toBe("error");
+
+    const responseText = secondTurn.content
+      .filter(isTextContent)
+      .map((contentPart) => contentPart.text)
+      .join(" ")
+      .trim();
+
+    expect(responseText).toContain(rememberedToken);
   });
 });

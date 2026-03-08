@@ -100,6 +100,20 @@ If you want the spec-first provider entry without the OpenCode compatibility ove
 import { anthropic, createAnthropic } from "ai-sdk-agent-sdk/core";
 ```
 
+Provider factory options also support Agent SDK passthrough settings via `experimental_agentSdk`:
+
+```ts
+import { createAnthropic } from "ai-sdk-agent-sdk/core";
+
+const provider = createAnthropic({
+  apiKey: process.env.ANTHROPIC_API_KEY,
+  experimental_agentSdk: {
+    cwd: "/path/to/workspace",
+    debug: true,
+  },
+});
+```
+
 Use the root entry when you need OpenCode-oriented compatibility behavior. Use `ai-sdk-agent-sdk/core` when you want the clean provider surface directly.
 
 ## Changelog

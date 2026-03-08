@@ -1,4 +1,3 @@
-import type { AnthropicProviderSettings } from "@ai-sdk/anthropic";
 import type {
   LanguageModelV3CallOptions,
   LanguageModelV3Content,
@@ -28,7 +27,7 @@ import {
   type StreamBlockState,
   type StreamEventState,
 } from "../../shared/stream-types";
-import type { ToolExecutorMap } from "../../shared/tool-executor";
+import type { AgentSdkProviderSettings, ToolExecutorMap } from "../../shared/tool-executor";
 import { safeJsonStringify } from "../../shared/type-readers";
 import type { PromptSessionState } from "../domain/prompt-session-state";
 import {
@@ -66,7 +65,7 @@ import { persistQuerySessionState } from "./session-persistence";
 export const runGenerate = async (args: {
   options: LanguageModelV3CallOptions;
   modelId: string;
-  settings: AnthropicProviderSettings;
+  settings: AgentSdkProviderSettings;
   idGenerator: () => string;
   toolExecutors: ToolExecutorMap | undefined;
   maxTurns: number | undefined;

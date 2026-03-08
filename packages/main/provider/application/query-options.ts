@@ -1,11 +1,11 @@
-import type { AnthropicProviderSettings } from "@ai-sdk/anthropic";
 import type { Options as AgentQueryOptions } from "@anthropic-ai/claude-agent-sdk";
 
+import type { AgentSdkProviderSettings, AgentSdkQueryOptions } from "../../shared/tool-executor";
 import { buildQueryEnv } from "../domain/query-env";
 
 type BuildAgentQueryOptionsArgs = {
   modelId: string;
-  settings: AnthropicProviderSettings;
+  settings: AgentSdkProviderSettings;
   allowedTools: AgentQueryOptions["allowedTools"];
   mcpServers: AgentQueryOptions["mcpServers"];
   resumeSessionId: AgentQueryOptions["resume"];
@@ -19,8 +19,18 @@ type BuildAgentQueryOptionsArgs = {
   includePartialMessages: boolean;
 };
 
+const resolveAgentSdkQueryOptions = (
+  settings: AgentSdkProviderSettings,
+): AgentSdkQueryOptions | undefined => {
+  return settings.experimental_agentSdk;
+};
+
 export const buildAgentQueryOptions = (args: BuildAgentQueryOptionsArgs): AgentQueryOptions => {
+  const passthroughOptions = resolveAgentSdkQueryOptions(args.settings);
+  const cwd = passthroughOptions?.cwd ?? process.cwd();
+
   return {
+    ...passthroughOptions,
     model: args.modelId,
     tools: [],
     allowedTools: args.allowedTools,
@@ -37,7 +47,7 @@ export const buildAgentQueryOptions = (args: BuildAgentQueryOptionsArgs): AgentQ
     outputFormat: args.outputFormat,
     effort: args.effort,
     thinking: args.thinking,
-    cwd: process.cwd(),
+    cwd,
     includePartialMessages: args.includePartialMessages,
   };
 };

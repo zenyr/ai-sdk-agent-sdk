@@ -294,6 +294,38 @@ describe("provider settings contract", () => {
     expect(env.ANTHROPIC_BASE_URL).toBe("https://auth-proxy.example/v1");
   });
 
+  test("forwards experimental_agentSdk provider settings into query options", async () => {
+    const queryCalls: unknown[] = [];
+    const { createAnthropic } = await importIndexWithMockedQuery({ queryCalls });
+
+    const provider = createAnthropic({
+      experimental_agentSdk: {
+        cwd: "/tmp/custom-cwd",
+        debug: true,
+      },
+    });
+
+    const model = provider("claude-3-5-haiku-latest");
+    await model.doGenerate({
+      prompt: [
+        {
+          role: "user",
+          content: [{ type: "text", text: "Say hello." }],
+        },
+      ],
+    });
+
+    const options = readOptionsFromFirstQueryCall(queryCalls);
+    expect(options).toBeDefined();
+
+    if (options === undefined) {
+      return;
+    }
+
+    expect(options.cwd).toBe("/tmp/custom-cwd");
+    expect(options.debug).toBeTrue();
+  });
+
   test("preserves custom provider name", async () => {
     const queryCalls: unknown[] = [];
     const { createAnthropic } = await importIndexWithMockedQuery({ queryCalls });
