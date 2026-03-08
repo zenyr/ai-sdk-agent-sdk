@@ -6,13 +6,7 @@ import type {
 } from "@ai-sdk/provider";
 import type { SDKAssistantMessage, SDKResultMessage, SDKSystemMessage } from "@anthropic-ai/claude-agent-sdk";
 
-import {
-  isStructuredTextEnvelope,
-  isStructuredToolEnvelope,
-  mapStructuredToolCallsToContent,
-  parseStructuredEnvelopeFromText,
-  parseStructuredEnvelopeFromUnknown,
-} from "../../bridge/parse-utils";
+import { parseStructuredEnvelopeFromText } from "../../bridge/parse-utils";
 import { buildProviderMetadata, mapFinishReason, mapUsage } from "../../bridge/result-mapping";
 import { appendStreamPartsFromRawEvent, closePendingStreamBlocks } from "../../bridge/stream-event-mapper";
 import { createEmptyUsage, type StreamBlockState, type StreamEventState } from "../../shared/stream-types";
@@ -47,6 +41,7 @@ import {
   finishBridgeToolCallCapture,
   startBridgeToolCallCapture,
 } from "./tool-call-facade";
+import { resolveToolModeEnvelopeFromText, resolveToolModeEnvelopeFromUnknown } from "./tool-mode-envelope-facade";
 
 export const runGenerate = async (args: {
   options: LanguageModelV3CallOptions;
@@ -364,15 +359,17 @@ export const runGenerate = async (args: {
   }
 
   if (finalResultMessage.subtype === "success") {
-    const structuredOutput = finalResultMessage.structured_output;
-    const parsedStructuredOutput =
-      completionMode.type === "tools" ? parseStructuredEnvelopeFromUnknown(structuredOutput) : undefined;
+    const structuredOutputResolution =
+      completionMode.type === "tools"
+        ? resolveToolModeEnvelopeFromUnknown({
+            value: finalResultMessage.structured_output,
+            idGenerator: args.idGenerator,
+          })
+        : undefined;
 
-    if (completionMode.type === "tools" && isStructuredToolEnvelope(parsedStructuredOutput)) {
-      const toolCalls = mapStructuredToolCallsToContent(parsedStructuredOutput.calls, args.idGenerator);
-
-      if (toolCalls.length > 0) {
-        content = toolCalls;
+    if (completionMode.type === "tools" && structuredOutputResolution !== undefined) {
+      if (structuredOutputResolution.toolCalls.length > 0) {
+        content = structuredOutputResolution.toolCalls;
         finishReason = {
           unified: "tool-calls",
           raw: "tool_use",
@@ -404,8 +401,8 @@ export const runGenerate = async (args: {
       }
     }
 
-    if (content.length === 0 && completionMode.type === "tools" && isStructuredTextEnvelope(parsedStructuredOutput)) {
-      content = [{ type: "text", text: parsedStructuredOutput.text }];
+    if (content.length === 0 && completionMode.type === "tools" && structuredOutputResolution?.text !== undefined) {
+      content = [{ type: "text", text: structuredOutputResolution.text }];
     }
 
     if (content.length === 0 && completionMode.type === "json") {
@@ -418,22 +415,21 @@ export const runGenerate = async (args: {
       const assistantText = extractAssistantText(lastAssistantMessage);
       if (assistantText.length > 0) {
         if (completionMode.type === "tools") {
-          const parsedEnvelope = parseStructuredEnvelopeFromText(assistantText);
+          const assistantTextResolution = resolveToolModeEnvelopeFromText({
+            text: assistantText,
+            idGenerator: args.idGenerator,
+          });
 
-          if (isStructuredToolEnvelope(parsedEnvelope)) {
-            const toolCalls = mapStructuredToolCallsToContent(parsedEnvelope.calls, args.idGenerator);
-
-            if (toolCalls.length > 0) {
-              content = toolCalls;
-              finishReason = {
-                unified: "tool-calls",
-                raw: "tool_use",
-              };
-            }
+          if (assistantTextResolution.toolCalls.length > 0) {
+            content = assistantTextResolution.toolCalls;
+            finishReason = {
+              unified: "tool-calls",
+              raw: "tool_use",
+            };
           }
 
-          if (content.length === 0 && isStructuredTextEnvelope(parsedEnvelope)) {
-            content = [{ type: "text", text: parsedEnvelope.text }];
+          if (content.length === 0 && assistantTextResolution.text !== undefined) {
+            content = [{ type: "text", text: assistantTextResolution.text }];
           }
         }
 

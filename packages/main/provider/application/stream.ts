@@ -7,12 +7,7 @@ import type {
 } from "@ai-sdk/provider";
 import type { SDKAssistantMessage, SDKResultMessage, SDKSystemMessage } from "@anthropic-ai/claude-agent-sdk";
 
-import {
-  isStructuredTextEnvelope,
-  isStructuredToolEnvelope,
-  parseStructuredEnvelopeFromText,
-  parseStructuredEnvelopeFromUnknown,
-} from "../../bridge/parse-utils";
+import { parseStructuredEnvelopeFromText } from "../../bridge/parse-utils";
 import { buildProviderMetadata, mapFinishReason, mapUsage } from "../../bridge/result-mapping";
 import {
   appendStreamPartsFromRawEvent,
@@ -47,6 +42,11 @@ import {
   finishBridgeToolCallCapture,
   startBridgeToolCallCapture,
 } from "./tool-call-facade";
+import {
+  hasToolModeEnvelopeResolution,
+  resolveToolModeEnvelopeFromText,
+  resolveToolModeEnvelopeFromUnknown,
+} from "./tool-mode-envelope-facade";
 
 export const runStream = async (args: {
   options: LanguageModelV3CallOptions;
@@ -150,6 +150,11 @@ export const runStream = async (args: {
                 mappedPart.type === "tool-input-start" &&
                 isBridgeToolName(mappedPart.toolName)
               ) {
+                startBridgeToolCallCapture({
+                  pendingBridgeToolInputs,
+                  part: mappedPart,
+                });
+
                 controller.enqueue({
                   type: "tool-input-start",
                   id: mappedPart.id,
@@ -159,10 +164,6 @@ export const runStream = async (args: {
                   dynamic: mappedPart.dynamic,
                 });
 
-                startBridgeToolCallCapture({
-                  pendingBridgeToolInputs,
-                  part: mappedPart,
-                });
                 continue;
               }
 
@@ -270,43 +271,48 @@ export const runStream = async (args: {
 
         if (completionMode.type === "tools" && !useNativeToolExecution) {
           const bufferedText = bufferedToolModeText.join("");
-          let parsedEnvelope: unknown;
+          const structuredOutputResolution =
+            finalResultMessage?.subtype === "success"
+              ? resolveToolModeEnvelopeFromUnknown({
+                  value: finalResultMessage.structured_output,
+                  idGenerator: args.idGenerator,
+                })
+              : undefined;
+          const bufferedTextResolution =
+            (structuredOutputResolution === undefined || !hasToolModeEnvelopeResolution(structuredOutputResolution)) &&
+            bufferedText.length > 0
+              ? resolveToolModeEnvelopeFromText({
+                  text: bufferedText,
+                  idGenerator: args.idGenerator,
+                })
+              : undefined;
+          const envelopeResolution =
+            structuredOutputResolution !== undefined && hasToolModeEnvelopeResolution(structuredOutputResolution)
+              ? structuredOutputResolution
+              : bufferedTextResolution;
 
-          if (finalResultMessage?.subtype === "success") {
-            parsedEnvelope = parseStructuredEnvelopeFromUnknown(finalResultMessage.structured_output);
-          }
-
-          if (parsedEnvelope === undefined && bufferedText.length > 0) {
-            parsedEnvelope = parseStructuredEnvelopeFromText(bufferedText);
-          }
-
-          if (isStructuredToolEnvelope(parsedEnvelope)) {
-            for (const call of parsedEnvelope.calls) {
+          if (envelopeResolution !== undefined) {
+            for (const call of envelopeResolution.toolCalls) {
               controller.enqueue({
                 type: "tool-call",
-                toolCallId: args.idGenerator(),
+                toolCallId: call.toolCallId,
                 toolName: call.toolName,
-                input: safeJsonStringify(call.input),
-                providerExecuted: false,
+                input: call.input,
+                providerExecuted: call.providerExecuted,
               });
             }
 
-            emittedToolModeToolCalls = parsedEnvelope.calls.length > 0;
+            emittedToolModeToolCalls = envelopeResolution.toolCalls.length > 0;
           }
 
-          if (isStructuredTextEnvelope(parsedEnvelope)) {
-            if (!emittedToolModeToolCalls && parsedEnvelope.text.length > 0) {
-              enqueueSingleTextBlock(controller, args.idGenerator, parsedEnvelope.text);
+          if (envelopeResolution?.text !== undefined) {
+            if (!emittedToolModeToolCalls && envelopeResolution.text.length > 0) {
+              enqueueSingleTextBlock(controller, args.idGenerator, envelopeResolution.text);
               emittedToolModeText = true;
             }
           }
 
-          if (
-            !isStructuredToolEnvelope(parsedEnvelope) &&
-            !isStructuredTextEnvelope(parsedEnvelope) &&
-            bufferedText.length > 0 &&
-            !emittedToolModeToolCalls
-          ) {
+          if (envelopeResolution === undefined && bufferedText.length > 0 && !emittedToolModeToolCalls) {
             enqueueSingleTextBlock(controller, args.idGenerator, bufferedText);
             emittedToolModeText = true;
           }
