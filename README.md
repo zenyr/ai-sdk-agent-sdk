@@ -26,8 +26,9 @@ bun add ai-sdk-agent-sdk
 
 ## Entry points
 
-- `ai-sdk-agent-sdk`: package root compatibility entry for OpenCode and other legacy consumers
-- `ai-sdk-agent-sdk/core`: spec-first provider entry without OpenCode compatibility overlays
+- `ai-sdk-agent-sdk`: package root legacy compatibility entry for OpenCode and other v2-style consumers
+- `ai-sdk-agent-sdk/v3`: spec-first provider entry without OpenCode compatibility overlays
+- `ai-sdk-agent-sdk/v2`: explicit legacy v2 compatibility entry
 
 ## Usage with opencode
 
@@ -91,20 +92,20 @@ Add the following entry inside the `providers` object in `~/.config/opencode/ope
 
 `setCacheKey: true` is recommended when the caller can provide a stable conversation key. This package reads `promptCacheKey` / `x-conversation-id`, maps that key to a persisted Claude Agent SDK `sessionId`, and resumes the same Claude session on later turns. Session reuse is isolated by model plus runtime fingerprint, including `baseURL`, so the same cache key does not cross-resume into a different upstream proxy.
 
-The `npm` field tells OpenCode to load the package root compatibility entry. This keeps the legacy finish overlays that OpenCode expects. Claude Code must already be authenticated.
+The `npm` field tells OpenCode to load the package root legacy compatibility entry. This keeps the v2-style `finishReason`/`finish`/`reason` shape that OpenCode expects. Ambient Claude login is the default auth path. If you pass `apiKey`, that explicit key is used instead.
 
 ## Usage as a pure provider core
 
-If you want the spec-first provider entry without the OpenCode compatibility overlays, import the explicit core entry:
+If you want the spec-first provider entry without the OpenCode compatibility overlays, import the explicit v3 entry:
 
 ```ts
-import { anthropic, createAnthropic } from "ai-sdk-agent-sdk/core";
+import { anthropic, createAnthropic } from "ai-sdk-agent-sdk/v3";
 ```
 
 Provider factory options also support Agent SDK passthrough settings via `experimental_agentSdk`:
 
 ```ts
-import { createAnthropic } from "ai-sdk-agent-sdk/core";
+import { createAnthropic } from "ai-sdk-agent-sdk/v3";
 
 const provider = createAnthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -115,7 +116,7 @@ const provider = createAnthropic({
 });
 ```
 
-Use the root entry when you need OpenCode-oriented compatibility behavior. Use `ai-sdk-agent-sdk/core` when you want the clean provider surface directly.
+Use the root entry when you need OpenCode-oriented legacy compatibility behavior. Use `ai-sdk-agent-sdk/v3` when you want the clean v3 provider surface directly.
 
 ## Development workflow
 
