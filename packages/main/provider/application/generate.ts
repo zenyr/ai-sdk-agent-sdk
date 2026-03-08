@@ -19,12 +19,7 @@ import { createEmptyUsage, type StreamBlockState, type StreamEventState } from "
 import type { AgentSdkProviderSettings, ToolExecutorMap } from "../../shared/tool-executor";
 import { safeJsonStringify } from "../../shared/type-readers";
 import type { PromptSessionState } from "../domain/prompt-session-state";
-import {
-  buildToolBridgeConfig,
-  fromBridgeToolName,
-  isBridgeToolName,
-  normalizeToolInputJson,
-} from "../domain/tool-bridge-config";
+import { buildToolBridgeConfig, fromBridgeToolName, isBridgeToolName } from "../domain/tool-bridge-config";
 import {
   hasToolModePrimaryContent,
   recoverToolModeContentFromAssistantText,
@@ -32,11 +27,7 @@ import {
 } from "../domain/tool-recovery";
 import type { IncomingSessionState } from "../incoming-session-store";
 import type { AgentRuntimePort } from "../ports/agent-runtime-port";
-import {
-  appendPendingBridgeToolInputDelta,
-  finishPendingBridgeToolInput,
-  startPendingBridgeToolInput,
-} from "./bridge-tool-input-buffer";
+import type { PendingBridgeToolInputs } from "./bridge-tool-input-buffer";
 import { createAbortBridge, prepareQueryContext } from "./query-context";
 import { buildAgentQueryOptions } from "./query-options";
 import {
@@ -51,6 +42,11 @@ import {
   normalizeRuntimeQueryError,
 } from "./runtime-message-utils";
 import { persistQuerySessionState } from "./session-persistence";
+import {
+  appendBridgeToolCallCapture,
+  finishBridgeToolCallCapture,
+  startBridgeToolCallCapture,
+} from "./tool-call-facade";
 
 export const runGenerate = async (args: {
   options: LanguageModelV3CallOptions;
@@ -126,7 +122,7 @@ export const runGenerate = async (args: {
     latestStopReason: null,
     latestUsage: undefined,
   };
-  const pendingBridgeToolInputs = new Map<string, { toolName: string; deltas: string[] }>();
+  const pendingBridgeToolInputs: PendingBridgeToolInputs = new Map();
   const recoveredToolCallsFromStream: LanguageModelV3Content[] = [];
   let runtimeQueryError: { message: string; raw: string } | undefined;
 
@@ -134,14 +130,8 @@ export const runGenerate = async (args: {
     return "result" in message && typeof message.result === "string" ? message.result : "";
   };
 
-  const appendRecoveredToolCall = (toolCall: { toolCallId: string; toolName: string; rawInput: string }) => {
-    recoveredToolCallsFromStream.push({
-      type: "tool-call",
-      toolCallId: toolCall.toolCallId,
-      toolName: fromBridgeToolName(toolCall.toolName),
-      input: normalizeToolInputJson(toolCall.rawInput),
-      providerExecuted: useNativeToolExecution,
-    });
+  const appendRecoveredToolCall = (toolCall: Extract<LanguageModelV3Content, { type: "tool-call" }>) => {
+    recoveredToolCallsFromStream.push(toolCall);
   };
 
   try {
@@ -159,36 +149,31 @@ export const runGenerate = async (args: {
             mappedPart.type === "tool-input-start" &&
             isBridgeToolName(mappedPart.toolName)
           ) {
-            startPendingBridgeToolInput({
+            startBridgeToolCallCapture({
               pendingBridgeToolInputs,
-              id: mappedPart.id,
-              toolName: mappedPart.toolName,
+              part: mappedPart,
             });
             continue;
           }
 
           if (completionMode.type === "tools" && !useNativeToolExecution && mappedPart.type === "tool-input-delta") {
-            appendPendingBridgeToolInputDelta({
+            appendBridgeToolCallCapture({
               pendingBridgeToolInputs,
-              id: mappedPart.id,
-              delta: mappedPart.delta,
+              part: mappedPart,
             });
 
             continue;
           }
 
           if (completionMode.type === "tools" && !useNativeToolExecution && mappedPart.type === "tool-input-end") {
-            const finishedBridgeToolInput = finishPendingBridgeToolInput({
+            const toolCall = finishBridgeToolCallCapture({
               pendingBridgeToolInputs,
-              id: mappedPart.id,
+              part: mappedPart,
+              providerExecuted: useNativeToolExecution,
             });
 
-            if (finishedBridgeToolInput !== undefined) {
-              appendRecoveredToolCall({
-                toolCallId: mappedPart.id,
-                toolName: finishedBridgeToolInput.toolName,
-                rawInput: finishedBridgeToolInput.rawInput,
-              });
+            if (toolCall !== undefined) {
+              appendRecoveredToolCall(toolCall);
             }
           }
         }
@@ -212,17 +197,14 @@ export const runGenerate = async (args: {
     const remainingParts = closePendingStreamBlocks(partialStreamState);
     for (const remainingPart of remainingParts) {
       if (completionMode.type === "tools" && !useNativeToolExecution && remainingPart.type === "tool-input-end") {
-        const finishedBridgeToolInput = finishPendingBridgeToolInput({
+        const toolCall = finishBridgeToolCallCapture({
           pendingBridgeToolInputs,
-          id: remainingPart.id,
+          part: remainingPart,
+          providerExecuted: useNativeToolExecution,
         });
 
-        if (finishedBridgeToolInput !== undefined) {
-          appendRecoveredToolCall({
-            toolCallId: remainingPart.id,
-            toolName: finishedBridgeToolInput.toolName,
-            rawInput: finishedBridgeToolInput.rawInput,
-          });
+        if (toolCall !== undefined) {
+          appendRecoveredToolCall(toolCall);
         }
       }
     }
