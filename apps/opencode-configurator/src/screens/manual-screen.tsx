@@ -1,4 +1,3 @@
-import type { Manifest } from "@zenyr/opencode-configurator-core";
 import { ActionButton } from "../components/action-button";
 import { ClickableBox } from "../components/clickable-box";
 import { Panel } from "../components/panel";
