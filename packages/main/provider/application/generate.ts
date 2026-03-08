@@ -48,6 +48,7 @@ import {
   isResultMessage,
   isStructuredOutputRetryExhausted,
   isSystemInitMessage,
+  normalizeRuntimeQueryError,
 } from "./runtime-message-utils";
 import { persistQuerySessionState } from "./session-persistence";
 
@@ -93,6 +94,7 @@ export const runGenerate = async (args: {
   });
 
   const { abortController, cleanupAbortListener } = createAbortBridge(args.options.abortSignal);
+  const runtimeStderrChunks: string[] = [];
 
   const queryOptions = buildAgentQueryOptions({
     modelId: args.modelId,
@@ -108,6 +110,9 @@ export const runGenerate = async (args: {
     effort,
     thinking,
     includePartialMessages: completionMode.type === "tools",
+    onStderr: data => {
+      runtimeStderrChunks.push(data);
+    },
   });
 
   let lastAssistantMessage: SDKAssistantMessage | undefined;
@@ -121,6 +126,7 @@ export const runGenerate = async (args: {
   };
   const pendingBridgeToolInputs = new Map<string, { toolName: string; deltas: string[] }>();
   const recoveredToolCallsFromStream: LanguageModelV3Content[] = [];
+  let runtimeQueryError: { message: string; raw: string } | undefined;
 
   const appendRecoveredToolCall = (toolCall: { toolCallId: string; toolName: string; rawInput: string }) => {
     recoveredToolCallsFromStream.push({
@@ -214,8 +220,33 @@ export const runGenerate = async (args: {
         }
       }
     }
+  } catch (error) {
+    runtimeQueryError = normalizeRuntimeQueryError(error, runtimeStderrChunks.join(""));
   } finally {
     cleanupAbortListener();
+  }
+
+  if (runtimeQueryError !== undefined) {
+    return {
+      content: [{ type: "text", text: runtimeQueryError.message }],
+      finishReason: {
+        unified: "error",
+        raw: runtimeQueryError.raw,
+      },
+      usage: partialStreamState.latestUsage ?? createEmptyUsage(),
+      warnings,
+      request: {
+        body: {
+          prompt,
+          systemPrompt,
+          completionMode: completionMode.type,
+        },
+      },
+      response: {
+        modelId: args.modelId,
+        timestamp: new Date(),
+      },
+    };
   }
 
   await persistQuerySessionState({

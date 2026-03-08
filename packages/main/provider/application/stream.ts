@@ -48,6 +48,7 @@ import {
   isResultMessage,
   isStructuredOutputRetryExhausted,
   isSystemInitMessage,
+  normalizeRuntimeQueryError,
 } from "./runtime-message-utils";
 import { persistQuerySessionState } from "./session-persistence";
 
@@ -93,6 +94,7 @@ export const runStream = async (args: {
   });
 
   const { abortController, cleanupAbortListener } = createAbortBridge(args.options.abortSignal);
+  const runtimeStderrChunks: string[] = [];
 
   const queryOptions = buildAgentQueryOptions({
     modelId: args.modelId,
@@ -108,6 +110,9 @@ export const runStream = async (args: {
     effort,
     thinking,
     includePartialMessages: true,
+    onStderr: data => {
+      runtimeStderrChunks.push(data);
+    },
   });
 
   const streamState: StreamEventState = {
@@ -454,6 +459,7 @@ export const runStream = async (args: {
           providerMetadata,
         });
       } catch (error) {
+        const runtimeQueryError = normalizeRuntimeQueryError(error, runtimeStderrChunks.join(""));
         const remainingParts = closePendingStreamBlocks(streamState);
         for (const remainingPart of remainingParts) {
           if (shouldBufferToolModeText && remainingPart.type === "text-end") {
@@ -465,7 +471,7 @@ export const runStream = async (args: {
 
         controller.enqueue({
           type: "error",
-          error,
+          error: runtimeQueryError.message,
         });
 
         controller.enqueue({
@@ -473,7 +479,7 @@ export const runStream = async (args: {
           usage: streamState.latestUsage ?? createEmptyUsage(),
           finishReason: {
             unified: "error",
-            raw: "stream-bridge-error",
+            raw: runtimeQueryError.raw,
           },
         });
       } finally {

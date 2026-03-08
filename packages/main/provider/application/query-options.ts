@@ -17,6 +17,7 @@ type BuildAgentQueryOptionsArgs = {
   effort: AgentQueryOptions["effort"];
   thinking: AgentQueryOptions["thinking"];
   includePartialMessages: boolean;
+  onStderr: (data: string) => void;
 };
 
 const resolveAgentSdkQueryOptions = (settings: AgentSdkProviderSettings): AgentSdkQueryOptions | undefined => {
@@ -47,5 +48,9 @@ export const buildAgentQueryOptions = (args: BuildAgentQueryOptionsArgs): AgentQ
     thinking: args.thinking,
     cwd,
     includePartialMessages: args.includePartialMessages,
+    stderr: data => {
+      passthroughOptions?.stderr?.(data);
+      args.onStderr(data);
+    },
   };
 };

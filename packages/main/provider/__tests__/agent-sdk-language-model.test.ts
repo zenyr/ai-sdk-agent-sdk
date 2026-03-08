@@ -61,6 +61,7 @@ const importLanguageModelWithMockedRuntime = async (args: {
   queryCalls: unknown[];
   getStore: (incomingSessionKey: string) => Promise<unknown>;
   setStore: (incomingSessionKey: string, state: unknown) => Promise<void>;
+  queryError?: unknown;
 }) => {
   let callCount = 0;
 
@@ -69,6 +70,10 @@ const importLanguageModelWithMockedRuntime = async (args: {
       query: async function* (request: unknown) {
         args.queryCalls.push(request);
         callCount += 1;
+
+        if (args.queryError !== undefined) {
+          throw args.queryError;
+        }
 
         yield {
           type: "result",
@@ -127,6 +132,32 @@ const importLanguageModelWithMockedRuntime = async (args: {
       },
     },
   });
+};
+
+const createLanguageModelWithRuntime = async (runtime: { query: (request: unknown) => AsyncIterable<unknown> }) => {
+  const moduleId = `../agent-sdk-language-model.ts?runtime-${Date.now()}-${Math.random()}`;
+  const { AgentSdkAnthropicLanguageModel } = await import(moduleId);
+
+  return new AgentSdkAnthropicLanguageModel({
+    modelId: "claude-3-5-haiku-latest",
+    provider: "anthropic.messages",
+    settings: {},
+    idGenerator: () => `id-${Date.now()}-${Math.random()}`,
+    runtime,
+    sessionStore: {
+      get: async () => {
+        return undefined;
+      },
+      set: async () => {},
+    },
+  });
+};
+
+const readTextContent = (result: { content: Array<{ type: string; text?: string }> }): string => {
+  return result.content
+    .filter(part => part.type === "text" && typeof part.text === "string")
+    .map(part => part.text)
+    .join("\n");
 };
 
 describe("agent-sdk-language-model", () => {
@@ -197,5 +228,78 @@ describe("agent-sdk-language-model", () => {
     expect(warnings).toHaveLength(1);
     expect(warnings[0]?.includes("session store set failed")).toBeTrue();
     expect(warnings[0]?.includes("conversation-set-fail")).toBeTrue();
+  });
+
+  test("falls back to non-empty generic generate message for opaque runtime errors", async () => {
+    const model = await createLanguageModelWithRuntime({
+      query() {
+        throw new Error("Claude Code process exited with code 1");
+      },
+    });
+
+    const result = await model.doGenerate({
+      prompt: [userMessage("hello")],
+    });
+
+    expect(result.finishReason.unified).toBe("error");
+    expect(readTextContent(result)).toContain("Claude Code request failed before returning a result");
+  });
+
+  test("prefers structured stderr details over generic exit message", async () => {
+    const model = await createLanguageModelWithRuntime({
+      query() {
+        throw {
+          message: "Claude Code process exited with code 1",
+          exitCode: 1,
+          stderr: "Error: exceeded your current quota",
+        };
+      },
+    });
+
+    const result = await model.doGenerate({
+      prompt: [userMessage("hello")],
+    });
+
+    expect(result.finishReason.raw).toBe("runtime-query-quota-exhausted");
+    expect(readTextContent(result)).toContain("quota appears exhausted");
+  });
+
+  test("falls back to non-empty generic stream message for opaque runtime errors", async () => {
+    const model = await createLanguageModelWithRuntime({
+      query() {
+        throw new Error("Claude Code process exited with code 1");
+      },
+    });
+
+    const streamResult = await model.doStream({
+      prompt: [userMessage("hello")],
+    });
+
+    const parts: unknown[] = [];
+    for await (const part of streamResult.stream) {
+      parts.push(part);
+    }
+
+    const errorPart = parts.find(part => {
+      return typeof part === "object" && part !== null && "type" in part && part.type === "error";
+    });
+    expect(errorPart).toBeDefined();
+
+    if (typeof errorPart !== "object" || errorPart === null || !("error" in errorPart)) {
+      return;
+    }
+
+    expect(String(errorPart.error)).toContain("Claude Code request failed before returning a result");
+
+    const finishPart = parts.find(part => {
+      return typeof part === "object" && part !== null && "type" in part && part.type === "finish";
+    });
+    expect(finishPart).toBeDefined();
+
+    if (typeof finishPart !== "object" || finishPart === null || !("finishReason" in finishPart)) {
+      return;
+    }
+
+    expect(finishPart.finishReason).toEqual({ unified: "error", raw: "runtime-query-error" });
   });
 });
