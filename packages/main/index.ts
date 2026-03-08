@@ -1,6 +1,5 @@
 import type { AnthropicLanguageModelOptions } from "@ai-sdk/anthropic";
-import { withOpenCodeCompatibility } from "./compat/open-code-compat";
-import { anthropic as coreAnthropic, createAnthropic as createCoreAnthropic } from "./provider/create-anthropic";
+import { createAnthropic as createLegacyAnthropic, anthropic as legacyAnthropic } from "./v2";
 
 export type {
   AnthropicLanguageModelOptions,
@@ -21,8 +20,8 @@ export type {
 
 export type AnthropicProviderOptions = AnthropicLanguageModelOptions;
 
-export const createAnthropic = (...args: Parameters<typeof createCoreAnthropic>) => {
-  return withOpenCodeCompatibility(createCoreAnthropic(...args));
+export const createAnthropic = (...args: Parameters<typeof createLegacyAnthropic>) => {
+  return createLegacyAnthropic(...args);
 };
 
-export const anthropic = withOpenCodeCompatibility(coreAnthropic);
+export const anthropic = legacyAnthropic;

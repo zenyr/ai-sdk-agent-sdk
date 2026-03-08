@@ -48,14 +48,14 @@ describe("runtime surface contract", () => {
     }).toThrow();
   });
 
-  test("provider specification version is v3", async () => {
+  test("root provider specification version is v2 for legacy consumers", async () => {
     const { anthropic } = await loadMainModule();
 
-    expect(anthropic.specificationVersion).toBe("v3");
+    expect(anthropic.specificationVersion).toBe("v2");
 
     const model = anthropic("claude-3-5-haiku-latest");
 
-    expect(model.specificationVersion).toBe("v3");
+    expect(model.specificationVersion).toBe("v2");
     expect(model.provider).toBe("anthropic.messages");
     expect(model.modelId).toBe("claude-3-5-haiku-latest");
   });
@@ -67,7 +67,7 @@ describe("runtime surface contract", () => {
     expect("isOpenCode" in mainModule).toBeFalse();
   });
 
-  test("root entry adds legacy finish overlay for compat consumers", async () => {
+  test("root entry uses legacy finish shape for compat consumers", async () => {
     mock.module("@anthropic-ai/claude-agent-sdk", () => {
       return {
         query: async function* () {
@@ -106,8 +106,9 @@ describe("runtime surface contract", () => {
       ],
     });
 
-    expect(result.finishReason.unified).toBe("stop");
+    expect(result.finishReason).toBe("stop");
     expect("finish" in result).toBeTrue();
+    expect("rawFinishReason" in result).toBeTrue();
 
     if (!("finish" in result) || !("reason" in result)) {
       return;
@@ -115,6 +116,129 @@ describe("runtime surface contract", () => {
 
     expect(result.finish).toBe("stop");
     expect(result.reason).toBe("end_turn");
+  });
+
+  test("root entry doStream finish part uses legacy finish shape", async () => {
+    mock.module("@anthropic-ai/claude-agent-sdk", () => {
+      return {
+        query: async function* () {
+          yield {
+            type: "stream_event",
+            event: {
+              type: "message_start",
+              message: {
+                id: "msg-root-stream",
+                model: "mock-model",
+              },
+            },
+          };
+
+          yield {
+            type: "stream_event",
+            event: {
+              type: "content_block_start",
+              index: 0,
+              content_block: {
+                type: "text",
+              },
+            },
+          };
+
+          yield {
+            type: "stream_event",
+            event: {
+              type: "content_block_delta",
+              index: 0,
+              delta: {
+                type: "text_delta",
+                text: "hello",
+              },
+            },
+          };
+
+          yield {
+            type: "stream_event",
+            event: {
+              type: "content_block_stop",
+              index: 0,
+            },
+          };
+
+          yield {
+            type: "stream_event",
+            event: {
+              type: "message_delta",
+              delta: {
+                stop_reason: "end_turn",
+              },
+              usage: {
+                input_tokens: 10,
+                output_tokens: 5,
+                cache_read_input_tokens: 0,
+                cache_creation_input_tokens: 0,
+              },
+            },
+          };
+
+          yield {
+            type: "result",
+            subtype: "success",
+            stop_reason: "end_turn",
+            result: "done",
+            usage: {
+              input_tokens: 10,
+              output_tokens: 5,
+              cache_read_input_tokens: 0,
+              cache_creation_input_tokens: 0,
+            },
+            duration_ms: 1,
+            duration_api_ms: 1,
+            is_error: false,
+            num_turns: 1,
+            total_cost_usd: 0,
+            modelUsage: {},
+            permission_denials: [],
+            uuid: "uuid-root-stream",
+            session_id: "session-root-stream",
+          };
+        },
+      };
+    });
+
+    const { anthropic } = await loadMainModule();
+    const streamResult = await anthropic("claude-3-5-haiku-latest").doStream({
+      prompt: [
+        {
+          role: "user",
+          content: [{ type: "text", text: "hello" }],
+        },
+      ],
+    });
+
+    const parts: unknown[] = [];
+    for await (const part of streamResult.stream) {
+      parts.push(part);
+    }
+
+    const finishPart = parts.find(part => {
+      return typeof part === "object" && part !== null && "type" in part && part.type === "finish";
+    });
+
+    expect(finishPart).toBeDefined();
+
+    if (
+      typeof finishPart !== "object" ||
+      finishPart === null ||
+      !("finishReason" in finishPart) ||
+      !("finish" in finishPart) ||
+      !("reason" in finishPart)
+    ) {
+      return;
+    }
+
+    expect(finishPart.finishReason).toBe("stop");
+    expect(finishPart.finish).toBe("stop");
+    expect(finishPart.reason).toBe("end_turn");
   });
 
   test("forward helper returns undefined with no container metadata", async () => {
