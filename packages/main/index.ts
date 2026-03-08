@@ -14,6 +14,8 @@ export { forwardAnthropicContainerIdFromLastStep } from "./provider/forward-cont
 export { VERSION } from "./shared/constants";
 export type {
   AgentSdkProviderSettings,
+  ToolCallDelegate,
+  ToolExecutionRequest,
   ToolExecutor,
   ToolExecutorMap,
 } from "./shared/tool-executor";

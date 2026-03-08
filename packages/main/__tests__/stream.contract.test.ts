@@ -400,6 +400,116 @@ describe("stream bridge contract", () => {
     expect(firstTextDelta.delta).toBe("안녕하세요! 무엇을 도와드릴까요?");
   });
 
+  test("tool mode surfaces plain fallback text when provider-side tool execution is unavailable", async () => {
+    mock.module("@anthropic-ai/claude-agent-sdk", () => {
+      return {
+        query: async function* () {
+          yield {
+            type: "stream_event",
+            event: {
+              type: "message_start",
+              message: {
+                id: "msg-fallback",
+                model: "mock-model",
+              },
+            },
+          };
+
+          yield {
+            type: "stream_event",
+            event: {
+              type: "content_block_start",
+              index: 0,
+              content_block: {
+                type: "text",
+                text: "",
+              },
+            },
+          };
+
+          yield {
+            type: "stream_event",
+            event: {
+              type: "content_block_delta",
+              index: 0,
+              delta: {
+                type: "text_delta",
+                text: "죄송합니다, 외부 도구가 비활성화되어 있어 실시간 정보를 가져올 수 없습니다.",
+              },
+            },
+          };
+
+          yield {
+            type: "stream_event",
+            event: {
+              type: "content_block_stop",
+              index: 0,
+            },
+          };
+
+          yield {
+            type: "result",
+            subtype: "success",
+            stop_reason: "end_turn",
+            result: "",
+            usage: buildMockResultUsage(),
+          };
+        },
+      };
+    });
+
+    const moduleId = `../index.ts?stream-contract-fallback-${Date.now()}-${Math.random()}`;
+    const { createAnthropic } = await import(moduleId);
+
+    const streamResult = await createAnthropic({})("claude-3-5-haiku-latest").doStream({
+      prompt: [
+        {
+          role: "user",
+          content: [{ type: "text", text: "서울 날씨 어때?" }],
+        },
+      ],
+      tools: [
+        {
+          type: "function",
+          name: "websearch",
+          description: "Search web",
+          inputSchema: {
+            type: "object",
+            additionalProperties: false,
+            required: ["query"],
+            properties: {
+              query: {
+                type: "string",
+              },
+            },
+          },
+        },
+      ],
+      toolChoice: { type: "required" },
+    });
+
+    const parts: unknown[] = [];
+    for await (const part of streamResult.stream) {
+      parts.push(part);
+    }
+
+    const errorPart = parts.find(part => {
+      return typeof part === "object" && part !== null && "type" in part && part.type === "error";
+    });
+    expect(errorPart).toBeUndefined();
+
+    const textDeltaPart = parts.find(part => {
+      return typeof part === "object" && part !== null && "type" in part && part.type === "text-delta";
+    });
+    expect(textDeltaPart).toBeDefined();
+
+    if (typeof textDeltaPart !== "object" || textDeltaPart === null || !("delta" in textDeltaPart)) {
+      return;
+    }
+
+    expect(String(textDeltaPart.delta)).toContain("외부 도구가 비활성화되어 있어");
+  });
+
   test("doStream reuses claude session with appended prompt messages", async () => {
     const queryCalls: unknown[] = [];
     let callCount = 0;
@@ -1537,7 +1647,7 @@ describe("stream bridge contract", () => {
       return;
     }
 
-    expect(String(errorPart.error)).toContain("Tool routing produced no tool call");
+    expect(String(errorPart.error)).toContain("Tool routing finished without a final text response");
 
     const finishPart = parts.find(part => {
       return typeof part === "object" && part !== null && "type" in part && part.type === "finish";

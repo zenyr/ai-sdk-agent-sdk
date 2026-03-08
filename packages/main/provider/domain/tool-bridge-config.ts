@@ -2,7 +2,7 @@ import type { Options as AgentQueryOptions } from "@anthropic-ai/claude-agent-sd
 import * as agentSdk from "@anthropic-ai/claude-agent-sdk";
 
 import { buildZodRawShapeFromToolInputSchema } from "../../bridge/tool-schema-to-zod-shape";
-import type { ToolExecutorMap } from "../../shared/tool-executor";
+import type { ToolCallDelegate, ToolExecutorMap } from "../../shared/tool-executor";
 import { isRecord, safeJsonStringify } from "../../shared/type-readers";
 
 const TOOL_BRIDGE_SERVER_NAME = "ai_sdk_tool_bridge";
@@ -49,7 +49,8 @@ export const normalizeToolInputJson = (value: string): string => {
 
 export const buildToolBridgeConfig = (
   tools: Array<{ name: string; description?: string; inputSchema: unknown }>,
-  toolExecutors: ToolExecutorMap | undefined
+  toolExecutors: ToolExecutorMap | undefined,
+  toolCallDelegate: ToolCallDelegate | undefined
 ): ToolBridgeConfig | undefined => {
   if (tools.length === 0) {
     return undefined;
@@ -88,7 +89,7 @@ export const buildToolBridgeConfig = (
       content: [
         {
           type: "text",
-          text: "Provider-side execution is disabled for AI SDK bridge tools.",
+          text: "Provider-side execution is unavailable because no tool handler or delegate was configured for this AI SDK bridge tool.",
         },
       ],
     };
@@ -100,41 +101,47 @@ export const buildToolBridgeConfig = (
   const mcpTools = tools.map(toolDefinition => {
     const zodRawShape = buildZodRawShapeFromToolInputSchema(toolDefinition.inputSchema);
     const toolExecutor = toolExecutors?.[toolDefinition.name];
+    const hasToolHandler = toolExecutor !== undefined || toolCallDelegate !== undefined;
 
-    if (toolExecutor !== undefined) {
+    if (hasToolHandler) {
       hasAnyExecutor = true;
     } else {
       missingExecutorToolNames.push(toolDefinition.name);
     }
 
-    const toolHandler =
-      toolExecutor === undefined
-        ? buildDisabledHandler
-        : async (args: unknown) => {
-            const input = isRecord(args) ? args : {};
+    const toolHandler = !hasToolHandler
+      ? buildDisabledHandler
+      : async (args: unknown) => {
+          const input = isRecord(args) ? args : {};
 
-            try {
-              const output = await toolExecutor(input);
-              return {
-                content: [
-                  {
-                    type: "text",
-                    text: stringifyToolExecutorOutput(output),
-                  },
-                ],
-              };
-            } catch (error) {
-              return {
-                isError: true,
-                content: [
-                  {
-                    type: "text",
-                    text: stringifyToolExecutorError(error),
-                  },
-                ],
-              };
-            }
-          };
+          try {
+            const output =
+              toolExecutor !== undefined
+                ? await toolExecutor(input)
+                : await toolCallDelegate?.({
+                    toolName: toolDefinition.name,
+                    input,
+                  });
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: stringifyToolExecutorOutput(output),
+                },
+              ],
+            };
+          } catch (error) {
+            return {
+              isError: true,
+              content: [
+                {
+                  type: "text",
+                  text: stringifyToolExecutorError(error),
+                },
+              ],
+            };
+          }
+        };
 
     if (typeof buildMcpTool === "function") {
       return buildMcpTool(

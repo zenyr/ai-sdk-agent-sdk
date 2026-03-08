@@ -6,7 +6,7 @@ import type {
   SharedV3Warning,
 } from "@ai-sdk/provider";
 import { DEFAULT_SUPPORTED_URLS } from "../shared/constants";
-import type { AgentSdkProviderSettings, ToolExecutorMap } from "../shared/tool-executor";
+import type { AgentSdkProviderSettings, ToolCallDelegate, ToolExecutorMap } from "../shared/tool-executor";
 import { claudeAgentRuntime } from "./adapters/claude-agent-runtime";
 import { fileIncomingSessionStore } from "./adapters/file-incoming-session-store";
 import { runGenerate } from "./application/generate";
@@ -25,7 +25,7 @@ const buildPartialToolExecutorWarning = (missingExecutorToolNames: string[]): Sh
     feature: "toolExecutors.partial",
     details:
       `toolExecutors is missing handlers for: ${missingExecutorToolNames.join(", ")}. ` +
-      "Falling back to AI SDK tool loop with maxTurns=1.",
+      "Falling back to AI SDK tool loop without provider-side bridge execution for those tools.",
   };
 };
 
@@ -50,6 +50,7 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
   private readonly settings: AgentSdkProviderSettings;
   private readonly idGenerator: () => string;
   private readonly toolExecutors: ToolExecutorMap | undefined;
+  private readonly toolCallDelegate: ToolCallDelegate | undefined;
   private readonly maxTurns: number | undefined;
   private readonly runtime: AgentRuntimePort;
   private readonly runtimeFingerprint: string;
@@ -65,6 +66,7 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
     settings: AgentSdkProviderSettings;
     idGenerator: () => string;
     toolExecutors?: ToolExecutorMap;
+    toolCallDelegate?: ToolCallDelegate;
     maxTurns?: number;
     runtime?: AgentRuntimePort;
     sessionStore?: IncomingSessionStorePort;
@@ -74,6 +76,7 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
     this.settings = args.settings;
     this.idGenerator = args.idGenerator;
     this.toolExecutors = args.toolExecutors;
+    this.toolCallDelegate = args.toolCallDelegate;
     this.maxTurns = args.maxTurns;
     this.runtime = args.runtime ?? claudeAgentRuntime;
     this.runtimeFingerprint = buildRuntimeFingerprint({
@@ -171,6 +174,7 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
       settings: this.settings,
       idGenerator: this.idGenerator,
       toolExecutors: this.toolExecutors,
+      toolCallDelegate: this.toolCallDelegate,
       maxTurns: this.maxTurns,
       runtime: this.runtime,
       providerSettingWarnings: this.providerSettingWarnings,
@@ -193,6 +197,7 @@ export class AgentSdkAnthropicLanguageModel implements LanguageModelV3 {
       settings: this.settings,
       idGenerator: this.idGenerator,
       toolExecutors: this.toolExecutors,
+      toolCallDelegate: this.toolCallDelegate,
       maxTurns: this.maxTurns,
       runtime: this.runtime,
       providerSettingWarnings: this.providerSettingWarnings,

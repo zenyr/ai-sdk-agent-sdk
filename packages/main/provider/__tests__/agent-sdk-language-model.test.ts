@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import type { LanguageModelV3Message } from "@ai-sdk/provider";
-import type { ToolExecutorMap } from "../../shared/tool-executor";
+import type { ToolCallDelegate, ToolExecutorMap } from "../../shared/tool-executor";
 import type { IncomingSessionState } from "../incoming-session-store";
 
 const originalConsoleWarn = console.warn;
@@ -154,7 +154,7 @@ const importLanguageModelWithMockedRuntime = async (args: {
 const createLanguageModelWithRuntime = async (
   runtime: { query: (request: unknown) => AsyncIterable<unknown> },
   toolExecutors?: ToolExecutorMap,
-  options?: { mockNativeToolBridge?: boolean }
+  options?: { mockNativeToolBridge?: boolean; toolCallDelegate?: ToolCallDelegate }
 ) => {
   if (options?.mockNativeToolBridge === true) {
     mock.module("@anthropic-ai/claude-agent-sdk", () => {
@@ -181,6 +181,7 @@ const createLanguageModelWithRuntime = async (
     settings: {},
     idGenerator: () => `id-${Date.now()}-${Math.random()}`,
     toolExecutors,
+    toolCallDelegate: options?.toolCallDelegate,
     runtime,
     sessionStore: {
       get: async () => {

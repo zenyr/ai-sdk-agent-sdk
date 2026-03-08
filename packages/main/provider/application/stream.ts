@@ -15,7 +15,7 @@ import {
   enqueueSingleTextBlock,
 } from "../../bridge/stream-event-mapper";
 import { createEmptyUsage, type StreamBlockState, type StreamEventState } from "../../shared/stream-types";
-import type { AgentSdkProviderSettings, ToolExecutorMap } from "../../shared/tool-executor";
+import type { AgentSdkProviderSettings, ToolCallDelegate, ToolExecutorMap } from "../../shared/tool-executor";
 import { safeJsonStringify } from "../../shared/type-readers";
 import type { PromptSessionState } from "../domain/prompt-session-state";
 import { buildToolBridgeConfig, fromBridgeToolName, isBridgeToolName } from "../domain/tool-bridge-config";
@@ -55,6 +55,7 @@ export const runStream = async (args: {
   settings: AgentSdkProviderSettings;
   idGenerator: () => string;
   toolExecutors: ToolExecutorMap | undefined;
+  toolCallDelegate: ToolCallDelegate | undefined;
   maxTurns: number | undefined;
   runtime: AgentRuntimePort;
   providerSettingWarnings: SharedV3Warning[];
@@ -86,7 +87,7 @@ export const runStream = async (args: {
     previousIncomingSessionStates: args.previousIncomingSessionStates,
     hydrateIncomingSessionState: args.hydrateIncomingSessionState,
     buildToolBridgeConfig: tools => {
-      return buildToolBridgeConfig(tools, args.toolExecutors);
+      return buildToolBridgeConfig(tools, args.toolExecutors, args.toolCallDelegate);
     },
     buildPartialToolExecutorWarning: args.buildPartialToolExecutorWarning,
   });
@@ -97,8 +98,8 @@ export const runStream = async (args: {
   const queryOptions = buildAgentQueryOptions({
     modelId: args.modelId,
     settings: args.settings,
-    allowedTools: toolBridgeConfig?.allowedTools ?? [],
-    mcpServers: toolBridgeConfig?.mcpServers,
+    allowedTools: useNativeToolExecution ? (toolBridgeConfig?.allowedTools ?? []) : [],
+    mcpServers: useNativeToolExecution ? toolBridgeConfig?.mcpServers : undefined,
     resumeSessionId: promptQueryInput.resumeSessionId,
     systemPrompt,
     maxTurns: args.maxTurns,
@@ -312,7 +313,11 @@ export const runStream = async (args: {
             }
           }
 
-          if (envelopeResolution === undefined && bufferedText.length > 0 && !emittedToolModeToolCalls) {
+          if (
+            (envelopeResolution === undefined || !hasToolModeEnvelopeResolution(envelopeResolution)) &&
+            bufferedText.length > 0 &&
+            !emittedToolModeToolCalls
+          ) {
             enqueueSingleTextBlock(controller, args.idGenerator, bufferedText);
             emittedToolModeText = true;
           }

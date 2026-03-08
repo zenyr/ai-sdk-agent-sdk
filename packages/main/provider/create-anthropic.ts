@@ -20,6 +20,7 @@ const createLanguageModelFactory = (args: {
       settings: args.settings,
       idGenerator: args.idGenerator,
       toolExecutors: args.settings.toolExecutors,
+      toolCallDelegate: args.settings.toolCallDelegate,
       maxTurns: args.settings.maxTurns,
       sessionStore: fileIncomingSessionStore,
     });

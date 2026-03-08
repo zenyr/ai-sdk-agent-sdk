@@ -5,6 +5,13 @@ export type ToolExecutor = (input: Record<string, unknown>) => unknown | Promise
 
 export type ToolExecutorMap = Record<string, ToolExecutor>;
 
+export type ToolExecutionRequest = {
+  toolName: string;
+  input: Record<string, unknown>;
+};
+
+export type ToolCallDelegate = (request: ToolExecutionRequest) => unknown | Promise<unknown>;
+
 type ReservedAgentQueryOptionKeys =
   | "model"
   | "tools"
@@ -24,6 +31,7 @@ export type AgentSdkQueryOptions = Omit<AgentQueryOptions, ReservedAgentQueryOpt
 
 export type AgentSdkProviderSettings = AnthropicProviderSettings & {
   toolExecutors?: ToolExecutorMap;
+  toolCallDelegate?: ToolCallDelegate;
   maxTurns?: number;
   experimental_agentSdk?: AgentSdkQueryOptions;
 };

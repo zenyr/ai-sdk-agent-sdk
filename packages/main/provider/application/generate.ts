@@ -10,7 +10,7 @@ import { parseStructuredEnvelopeFromText } from "../../bridge/parse-utils";
 import { buildProviderMetadata, mapFinishReason, mapUsage } from "../../bridge/result-mapping";
 import { appendStreamPartsFromRawEvent, closePendingStreamBlocks } from "../../bridge/stream-event-mapper";
 import { createEmptyUsage, type StreamBlockState, type StreamEventState } from "../../shared/stream-types";
-import type { AgentSdkProviderSettings, ToolExecutorMap } from "../../shared/tool-executor";
+import type { AgentSdkProviderSettings, ToolCallDelegate, ToolExecutorMap } from "../../shared/tool-executor";
 import { safeJsonStringify } from "../../shared/type-readers";
 import type { PromptSessionState } from "../domain/prompt-session-state";
 import { buildToolBridgeConfig, fromBridgeToolName, isBridgeToolName } from "../domain/tool-bridge-config";
@@ -50,6 +50,7 @@ export const runGenerate = async (args: {
   settings: AgentSdkProviderSettings;
   idGenerator: () => string;
   toolExecutors: ToolExecutorMap | undefined;
+  toolCallDelegate: ToolCallDelegate | undefined;
   maxTurns: number | undefined;
   runtime: AgentRuntimePort;
   providerSettingWarnings: SharedV3Warning[];
@@ -81,7 +82,7 @@ export const runGenerate = async (args: {
     previousIncomingSessionStates: args.previousIncomingSessionStates,
     hydrateIncomingSessionState: args.hydrateIncomingSessionState,
     buildToolBridgeConfig: tools => {
-      return buildToolBridgeConfig(tools, args.toolExecutors);
+      return buildToolBridgeConfig(tools, args.toolExecutors, args.toolCallDelegate);
     },
     buildPartialToolExecutorWarning: args.buildPartialToolExecutorWarning,
   });
@@ -92,8 +93,8 @@ export const runGenerate = async (args: {
   const queryOptions = buildAgentQueryOptions({
     modelId: args.modelId,
     settings: args.settings,
-    allowedTools: toolBridgeConfig?.allowedTools ?? [],
-    mcpServers: toolBridgeConfig?.mcpServers,
+    allowedTools: useNativeToolExecution ? (toolBridgeConfig?.allowedTools ?? []) : [],
+    mcpServers: useNativeToolExecution ? toolBridgeConfig?.mcpServers : undefined,
     resumeSessionId: promptQueryInput.resumeSessionId,
     systemPrompt,
     maxTurns: args.maxTurns,

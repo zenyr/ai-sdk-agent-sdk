@@ -9,7 +9,8 @@ import type {
 import { isRecord, readNumber, readString, safeJsonStringify } from "../../shared/type-readers";
 
 export const EMPTY_TOOL_ROUTING_OUTPUT_ERROR = "empty-tool-routing-output";
-export const EMPTY_TOOL_ROUTING_OUTPUT_TEXT = "Tool routing produced no tool call or text response.";
+export const EMPTY_TOOL_ROUTING_OUTPUT_TEXT =
+  "Tool routing finished without a final text response or recoverable tool call. This often means provider-side tool execution failed or no tool delegate was configured.";
 
 export const RUNTIME_QUERY_ERROR = "runtime-query-error";
 

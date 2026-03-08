@@ -656,7 +656,7 @@ describe("provider settings contract", () => {
       return;
     }
 
-    expect(firstContentPart.text).toContain("Tool routing produced no tool call");
+    expect(firstContentPart.text).toContain("Tool routing finished without a final text response");
   });
 
   test("tool mode recovers native MCP tool-use from error_max_turns", async () => {
@@ -2117,6 +2117,7 @@ describe("provider settings contract", () => {
 
     expect(options.tools).toEqual([]);
     expect(options.allowedTools).toEqual([]);
+    expect(options.mcpServers).toBeUndefined();
     expect(options.settingSources).toEqual([]);
     expect(options.permissionMode).toBe("dontAsk");
     expect(options.maxTurns).toBe(1);
