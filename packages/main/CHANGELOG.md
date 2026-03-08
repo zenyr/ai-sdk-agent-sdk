@@ -1,5 +1,12 @@
 # ai-sdk-agent-sdk
 
+## Unreleased
+
+### Notes
+
+- Package root `ai-sdk-agent-sdk` remains the compatibility entry for OpenCode-oriented consumers.
+- Pure provider behavior is available from `ai-sdk-agent-sdk/core`.
+
 ## 0.0.5-rc.0
 
 ### Patch Changes

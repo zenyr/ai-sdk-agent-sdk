@@ -24,6 +24,11 @@ npm install ai-sdk-agent-sdk
 bun add ai-sdk-agent-sdk
 ```
 
+## Entry points
+
+- `ai-sdk-agent-sdk`: package root compatibility entry for OpenCode and other legacy consumers
+- `ai-sdk-agent-sdk/core`: spec-first provider entry without OpenCode compatibility overlays
+
 ## Usage with opencode
 
 Add the following entry inside the `providers` object in `~/.config/opencode/opencode.jsonc`:
@@ -84,9 +89,19 @@ Add the following entry inside the `providers` object in `~/.config/opencode/ope
 }
 ```
 
-The `npm` field tells opencode to load the provider from the installed package. Requires Claude Code to be authenticated.
+<<<<<<< HEAD
+The `npm` field tells OpenCode to load the package root compatibility entry. This keeps the legacy finish overlays that OpenCode expects. Claude Code must already be authenticated.
+
+## Usage as a pure provider core
+
+If you want the spec-first provider entry without the OpenCode compatibility overlays, import the explicit core entry:
+
+```ts
+import { anthropic, createAnthropic } from "ai-sdk-agent-sdk/core";
+```
+
+Use the root entry when you need OpenCode-oriented compatibility behavior. Use `ai-sdk-agent-sdk/core` when you want the clean provider surface directly.
 
 ## Changelog
 
 [packages/main/CHANGELOG.md](./packages/main/CHANGELOG.md)
-
