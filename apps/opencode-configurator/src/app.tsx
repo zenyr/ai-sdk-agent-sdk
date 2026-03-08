@@ -5,6 +5,7 @@ import {
   applyPreparedConfig,
   type ConfiguratorOptions,
   fetchAnthropicManifest,
+  getModelFamily,
   type Manifest,
   type PreparedConfig,
   prepareProviderConfig,
@@ -172,6 +173,23 @@ const SetupApp = ({ runtime, options, userAgent, onExit }: SetupAppProps) => {
   const currentScope = scopeOptions[scopeIndex]?.value ?? "global";
   const currentPolicy = policyOptions[policyIndex]?.value ?? "mainstream";
   const manualModels = manifest?.models ?? [];
+  const policyModelCounts = useMemo(() => {
+    if (manifest === undefined) {
+      return {
+        mainstream: 0,
+        "latest-per-family": 0,
+        "all-stable": 0,
+        manual: manualModelIds.length,
+      };
+    }
+
+    return {
+      mainstream: selectManifestModels(manifest.models, "mainstream").length,
+      "latest-per-family": selectManifestModels(manifest.models, "latest-per-family").length,
+      "all-stable": selectManifestModels(manifest.models, "all-stable").length,
+      manual: manualModelIds.length,
+    };
+  }, [manifest, manualModelIds.length]);
   const currentStepNumber = stepOrder.indexOf(step) >= 0 ? stepOrder.indexOf(step) + 1 : undefined;
   const contextItems = [
     `Scope: ${currentScope}`,
@@ -190,6 +208,13 @@ const SetupApp = ({ runtime, options, userAgent, onExit }: SetupAppProps) => {
     Math.max(0, manualModels.length - manualVisibleCount)
   );
   const visibleManualModels = manualModels.slice(manualPageStart, manualPageStart + manualVisibleCount);
+  const visibleManualRows = visibleManualModels.map(model => ({
+    id: model.id,
+    family: getModelFamily(model),
+    reasoning: model.reasoning,
+    status: model.status ?? (model.experimental === true ? "experimental" : "stable"),
+    output: model.limit.output,
+  }));
 
   const existingModelIds = useMemo(() => {
     if (preview === undefined) {
@@ -264,6 +289,43 @@ const SetupApp = ({ runtime, options, userAgent, onExit }: SetupAppProps) => {
     }
   };
 
+  const selectScope = (index: number) => {
+    setScopeIndex(clamp(index, 0, scopeOptions.length - 1));
+  };
+
+  const submitScope = (index: number) => {
+    const nextScope = scopeOptions[clamp(index, 0, scopeOptions.length - 1)]?.value ?? "global";
+    setScopeIndex(clamp(index, 0, scopeOptions.length - 1));
+    setStep(nextScope === "path" ? "path" : "policy");
+  };
+
+  const selectPolicy = (index: number) => {
+    setPolicyIndex(clamp(index, 0, policyOptions.length - 1));
+  };
+
+  const submitPolicy = (index: number) => {
+    const nextIndex = clamp(index, 0, policyOptions.length - 1);
+    const policy = policyOptions[nextIndex]?.value ?? "mainstream";
+    setPolicyIndex(nextIndex);
+
+    if (policy === "manual") {
+      setStep("manual");
+      return;
+    }
+
+    void buildPreview(policy);
+  };
+
+  const toggleManualSelection = (modelId: string) => {
+    setManualModelIds(current => {
+      if (current.includes(modelId)) {
+        return current.filter(item => item !== modelId);
+      }
+
+      return [...current, modelId];
+    });
+  };
+
   useKeyboard(key => {
     if (key.ctrl && key.name === "c") {
       onExit(1);
@@ -281,15 +343,15 @@ const SetupApp = ({ runtime, options, userAgent, onExit }: SetupAppProps) => {
 
     if (step === "scope") {
       if (key.name === "up") {
-        setScopeIndex(current => Math.max(0, current - 1));
+        selectScope(scopeIndex - 1);
       }
 
       if (key.name === "down") {
-        setScopeIndex(current => Math.min(scopeOptions.length - 1, current + 1));
+        selectScope(scopeIndex + 1);
       }
 
       if (isConfirmKey(key.name)) {
-        setStep(currentScope === "path" ? "path" : "policy");
+        submitScope(scopeIndex);
       }
 
       return;
@@ -297,11 +359,11 @@ const SetupApp = ({ runtime, options, userAgent, onExit }: SetupAppProps) => {
 
     if (step === "policy") {
       if (key.name === "up") {
-        setPolicyIndex(current => Math.max(0, current - 1));
+        selectPolicy(policyIndex - 1);
       }
 
       if (key.name === "down") {
-        setPolicyIndex(current => Math.min(policyOptions.length - 1, current + 1));
+        selectPolicy(policyIndex + 1);
       }
 
       if (key.name === "backspace") {
@@ -309,12 +371,7 @@ const SetupApp = ({ runtime, options, userAgent, onExit }: SetupAppProps) => {
       }
 
       if (isConfirmKey(key.name)) {
-        if (currentPolicy === "manual") {
-          setStep("manual");
-          return;
-        }
-
-        void buildPreview(currentPolicy);
+        submitPolicy(policyIndex);
       }
 
       return;
@@ -335,13 +392,7 @@ const SetupApp = ({ runtime, options, userAgent, onExit }: SetupAppProps) => {
           return;
         }
 
-        setManualModelIds(current => {
-          if (current.includes(model.id)) {
-            return current.filter(item => item !== model.id);
-          }
-
-          return [...current, model.id];
-        });
+        toggleManualSelection(model.id);
       }
 
       if (key.name === "backspace") {
@@ -405,7 +456,9 @@ const SetupApp = ({ runtime, options, userAgent, onExit }: SetupAppProps) => {
         </Panel>
       ) : null}
 
-      {step === "scope" ? <ScopeScreen options={scopeOptions} selectedIndex={scopeIndex} width={textWidth} /> : null}
+      {step === "scope" ? (
+        <ScopeScreen options={scopeOptions} selectedIndex={scopeIndex} width={textWidth} onSelect={submitScope} />
+      ) : null}
 
       {step === "path" ? (
         <PathScreen
@@ -417,17 +470,27 @@ const SetupApp = ({ runtime, options, userAgent, onExit }: SetupAppProps) => {
       ) : null}
 
       {step === "policy" ? (
-        <PolicyScreen options={policyOptions} selectedIndex={policyIndex} width={textWidth} />
+        <PolicyScreen
+          options={policyOptions}
+          selectedIndex={policyIndex}
+          width={textWidth}
+          modelCounts={policyModelCounts}
+          recommendedValue="mainstream"
+          onSelect={selectPolicy}
+          onSubmit={submitPolicy}
+        />
       ) : null}
 
       {step === "manual" ? (
         <ManualScreen
-          models={visibleManualModels}
+          models={visibleManualRows}
           selectedIds={manualModelIds}
           cursor={manualCursor}
           startIndex={manualPageStart}
           totalCount={manualModels.length}
           width={textWidth}
+          onToggle={toggleManualSelection}
+          onConfirm={() => void buildPreview("manual")}
         />
       ) : null}
 
