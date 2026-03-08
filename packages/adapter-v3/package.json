@@ -23,7 +23,7 @@
     "bun.ts"
   ],
   "scripts": {
-    "build": "rm -rf ./dist && bun build ./index.ts --target=node --format=esm --outdir ./dist --external ai-sdk-agent-sdk --external @ai-sdk/anthropic",
+    "build": "rm -rf ./dist && bun build ./index.ts --target=node --format=esm --outdir ./dist --external ai-sdk-agent-sdk/v3 --external @ai-sdk/anthropic",
     "test": "bun test",
     "lint": "biome check . --write --unsafe",
     "prepublishOnly": "bun run build"

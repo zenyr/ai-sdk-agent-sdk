@@ -13,7 +13,7 @@ export {
   createAnthropic,
   forwardAnthropicContainerIdFromLastStep,
   VERSION,
-} from "ai-sdk-agent-sdk";
+} from "ai-sdk-agent-sdk/v3";
 
 export type AnthropicProviderOptions = AnthropicLanguageModelOptions;
 
