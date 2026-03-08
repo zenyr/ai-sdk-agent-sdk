@@ -3,14 +3,16 @@ import { describe, expect, test } from "bun:test";
 import { buildAgentQueryOptions } from "../application/query-options";
 
 describe("query-options", () => {
-  test("forces maxTurns to 1 without native tool execution", () => {
+  const onStderr = () => {};
+
+  test("forces maxTurns to 1 without tool mode", () => {
     const queryOptions = buildAgentQueryOptions({
       modelId: "claude-3-5-haiku-latest",
       settings: {
         apiKey: "api-key",
         baseURL: "https://proxy.example/v1/",
       },
-      allowedTools: ["tool-1"],
+      allowedTools: [],
       mcpServers: undefined,
       resumeSessionId: "session-1",
       systemPrompt: "system",
@@ -21,6 +23,7 @@ describe("query-options", () => {
       effort: undefined,
       thinking: undefined,
       includePartialMessages: false,
+      onStderr,
     });
 
     expect(queryOptions.maxTurns).toBe(1);
@@ -68,6 +71,7 @@ describe("query-options", () => {
         budgetTokens: 256,
       },
       includePartialMessages: true,
+      onStderr,
     });
 
     expect(queryOptions.maxTurns).toBe(4);
@@ -75,6 +79,27 @@ describe("query-options", () => {
     expect(queryOptions.mcpServers).toEqual({});
     expect(queryOptions.includePartialMessages).toBeTrue();
     expect(queryOptions.permissionMode).toBe("dontAsk");
+  });
+
+  test("keeps configured maxTurns in tool mode without native execution", () => {
+    const queryOptions = buildAgentQueryOptions({
+      modelId: "claude-3-5-haiku-latest",
+      settings: {},
+      allowedTools: ["tool-1"],
+      mcpServers: {},
+      resumeSessionId: "session-1",
+      systemPrompt: "system",
+      maxTurns: 9,
+      useNativeToolExecution: false,
+      abortController: new AbortController(),
+      outputFormat: undefined,
+      effort: undefined,
+      thinking: undefined,
+      includePartialMessages: false,
+      onStderr,
+    });
+
+    expect(queryOptions.maxTurns).toBe(9);
   });
 
   test("forwards experimental_agentSdk options while preserving adapter-owned fields", () => {
@@ -99,12 +124,13 @@ describe("query-options", () => {
       effort: undefined,
       thinking: undefined,
       includePartialMessages: false,
+      onStderr,
     });
 
     expect(queryOptions.cwd).toBe("/tmp/agent-sdk-e2e");
     expect(queryOptions.permissionMode).toBe("dontAsk");
     expect(queryOptions.settingSources).toEqual([]);
     expect(queryOptions.debug).toBeTrue();
-    expect(queryOptions.maxTurns).toBe(1);
+    expect(queryOptions.maxTurns).toBe(9);
   });
 });

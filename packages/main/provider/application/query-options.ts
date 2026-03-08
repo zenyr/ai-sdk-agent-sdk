@@ -27,6 +27,7 @@ const resolveAgentSdkQueryOptions = (settings: AgentSdkProviderSettings): AgentS
 export const buildAgentQueryOptions = (args: BuildAgentQueryOptionsArgs): AgentQueryOptions => {
   const passthroughOptions = resolveAgentSdkQueryOptions(args.settings);
   const cwd = passthroughOptions?.cwd ?? process.cwd();
+  const isToolMode = Array.isArray(args.allowedTools) && args.allowedTools.length > 0;
 
   return {
     ...passthroughOptions,
@@ -37,7 +38,7 @@ export const buildAgentQueryOptions = (args: BuildAgentQueryOptionsArgs): AgentQ
     systemPrompt: args.systemPrompt,
     permissionMode: "dontAsk",
     settingSources: [],
-    maxTurns: args.useNativeToolExecution ? args.maxTurns : 1,
+    maxTurns: args.useNativeToolExecution || isToolMode ? args.maxTurns : 1,
     abortController: args.abortController,
     env: buildQueryEnv(args.settings),
     hooks: passthroughOptions?.hooks ?? {},
