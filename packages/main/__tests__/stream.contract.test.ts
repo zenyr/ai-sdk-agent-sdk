@@ -34,6 +34,19 @@ const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === "object" && value !== null;
 };
 
+const readRecordValue = (
+  value: Record<string, unknown>,
+  key: string,
+): Record<string, unknown> | undefined => {
+  const candidate = value[key];
+  return isRecord(candidate) ? candidate : undefined;
+};
+
+const readStringValue = (value: Record<string, unknown>, key: string): string | undefined => {
+  const candidate = value[key];
+  return typeof candidate === "string" ? candidate : undefined;
+};
+
 const isAsyncIterable = (value: unknown): value is AsyncIterable<unknown> => {
   if (!isRecord(value)) {
     return false;
@@ -256,15 +269,12 @@ describe("stream bridge contract", () => {
     expect(typeof firstCall).toBe("object");
     expect(firstCall).not.toBeNull();
 
-    if (typeof firstCall !== "object" || firstCall === null) {
+    if (!isRecord(firstCall)) {
       return;
     }
 
-    const options =
-      typeof firstCall.options === "object" && firstCall.options !== null
-        ? firstCall.options
-        : undefined;
-    const prompt = typeof firstCall.prompt === "string" ? firstCall.prompt : undefined;
+    const options = readRecordValue(firstCall, "options");
+    const prompt = readStringValue(firstCall, "prompt");
 
     expect(options).toBeDefined();
     expect(prompt).toBeDefined();
@@ -475,11 +485,11 @@ describe("stream bridge contract", () => {
     expect(typeof secondCall).toBe("object");
     expect(secondCall).not.toBeNull();
 
-    if (typeof secondCall !== "object" || secondCall === null) {
+    if (!isRecord(secondCall)) {
       return;
     }
 
-    const secondPrompt = typeof secondCall.prompt === "string" ? secondCall.prompt : undefined;
+    const secondPrompt = readStringValue(secondCall, "prompt");
     expect(secondPrompt).toBeDefined();
 
     if (secondPrompt === undefined) {
@@ -489,10 +499,7 @@ describe("stream bridge contract", () => {
     expect(secondPrompt.includes("첫 질문")).toBeFalse();
     expect(secondPrompt.includes("두 번째 질문")).toBeTrue();
 
-    const options =
-      typeof secondCall.options === "object" && secondCall.options !== null
-        ? secondCall.options
-        : undefined;
+    const options = readRecordValue(secondCall, "options");
     expect(options).toBeDefined();
 
     if (options === undefined) {
@@ -570,14 +577,11 @@ describe("stream bridge contract", () => {
     expect(typeof secondCall).toBe("object");
     expect(secondCall).not.toBeNull();
 
-    if (typeof secondCall !== "object" || secondCall === null) {
+    if (!isRecord(secondCall)) {
       return;
     }
 
-    const options =
-      typeof secondCall.options === "object" && secondCall.options !== null
-        ? secondCall.options
-        : undefined;
+    const options = readRecordValue(secondCall, "options");
 
     expect(options).toBeDefined();
 
@@ -588,7 +592,7 @@ describe("stream bridge contract", () => {
     const resume = typeof options.resume === "string" ? options.resume : undefined;
     expect(resume).toBe("stream-header-session-1");
 
-    const secondPrompt = typeof secondCall.prompt === "string" ? secondCall.prompt : undefined;
+    const secondPrompt = readStringValue(secondCall, "prompt");
     expect(secondPrompt).toBeDefined();
 
     if (secondPrompt === undefined) {
@@ -667,14 +671,11 @@ describe("stream bridge contract", () => {
     expect(typeof secondCall).toBe("object");
     expect(secondCall).not.toBeNull();
 
-    if (typeof secondCall !== "object" || secondCall === null) {
+    if (!isRecord(secondCall)) {
       return;
     }
 
-    const options =
-      typeof secondCall.options === "object" && secondCall.options !== null
-        ? secondCall.options
-        : undefined;
+    const options = readRecordValue(secondCall, "options");
 
     expect(options).toBeDefined();
 
@@ -685,7 +686,7 @@ describe("stream bridge contract", () => {
     const resume = typeof options.resume === "string" ? options.resume : undefined;
     expect(resume).toBe("stream-init-system-1");
 
-    const secondPrompt = typeof secondCall.prompt === "string" ? secondCall.prompt : undefined;
+    const secondPrompt = readStringValue(secondCall, "prompt");
     expect(secondPrompt).toBeDefined();
 
     if (secondPrompt === undefined) {
@@ -849,14 +850,11 @@ describe("stream bridge contract", () => {
     expect(typeof secondCall).toBe("object");
     expect(secondCall).not.toBeNull();
 
-    if (typeof secondCall !== "object" || secondCall === null) {
+    if (!isRecord(secondCall)) {
       return;
     }
 
-    const options =
-      typeof secondCall.options === "object" && secondCall.options !== null
-        ? secondCall.options
-        : undefined;
+    const options = readRecordValue(secondCall, "options");
 
     expect(options).toBeDefined();
 
@@ -1750,5 +1748,93 @@ describe("stream bridge contract", () => {
     }
 
     expect(finishReason.unified).toBe("stop");
+  });
+
+  test("json mode suppresses structured output retry error when assistant text exists", async () => {
+    mock.module("@anthropic-ai/claude-agent-sdk", () => {
+      return {
+        query: async function* () {
+          yield {
+            type: "assistant",
+            message: {
+              content: [{ type: "text", text: '{"answer":"ok"}' }],
+            },
+          };
+
+          yield {
+            type: "result",
+            subtype: "error_max_structured_output_retries",
+            stop_reason: "end_turn",
+            duration_ms: 1,
+            duration_api_ms: 1,
+            is_error: true,
+            num_turns: 1,
+            total_cost_usd: 0,
+            usage: buildMockResultUsage(),
+            modelUsage: {},
+            permission_denials: [],
+            errors: ['[{"expected":"string","code":"invalid_type","path":["reason"]}]'],
+            uuid: "uuid-json-stream-retry",
+            session_id: "session-json-stream-retry",
+          };
+        },
+      };
+    });
+
+    const moduleId = `../index.ts?stream-contract-json-retry-${Date.now()}-${Math.random()}`;
+    const { anthropic } = await import(moduleId);
+
+    const streamResult = await anthropic("claude-3-5-haiku-latest").doStream({
+      prompt: [
+        {
+          role: "user",
+          content: [{ type: "text", text: "json으로 대답" }],
+        },
+      ],
+      responseFormat: {
+        type: "json",
+        schema: {
+          type: "object",
+          additionalProperties: false,
+          required: ["answer", "reason"],
+          properties: {
+            answer: { type: "string" },
+            reason: { type: "string" },
+          },
+        },
+      },
+    });
+
+    const parts: unknown[] = [];
+    for await (const part of streamResult.stream) {
+      parts.push(part);
+    }
+
+    const errorPart = parts.find((part) => {
+      return typeof part === "object" && part !== null && "type" in part && part.type === "error";
+    });
+    expect(errorPart).toBeUndefined();
+
+    const finishPart = parts.find((part) => {
+      return typeof part === "object" && part !== null && "type" in part && part.type === "finish";
+    });
+    expect(finishPart).toBeDefined();
+
+    if (typeof finishPart !== "object" || finishPart === null || !("finishReason" in finishPart)) {
+      return;
+    }
+
+    const finishReason = finishPart.finishReason;
+    if (
+      typeof finishReason !== "object" ||
+      finishReason === null ||
+      !("unified" in finishReason) ||
+      !("raw" in finishReason)
+    ) {
+      return;
+    }
+
+    expect(finishReason.unified).toBe("stop");
+    expect(finishReason.raw).toBe("error_max_structured_output_retries_recovered");
   });
 });

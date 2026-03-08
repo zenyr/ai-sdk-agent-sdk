@@ -51,6 +51,7 @@ import { buildAgentQueryOptions } from "./query-options";
 import {
   EMPTY_TOOL_ROUTING_OUTPUT_ERROR,
   EMPTY_TOOL_ROUTING_OUTPUT_TEXT,
+  extractAssistantText,
   isAssistantMessage,
   isPartialAssistantMessage,
   isResultMessage,
@@ -370,10 +371,14 @@ export const runStream = async (args: {
               finalResultMessage.subtype === "error_max_turns";
 
             const canRecoverFromStructuredOutputRetry =
-              completionMode.type === "tools" &&
-              !useNativeToolExecution &&
               isStructuredOutputRetryExhausted(finalResultMessage) &&
-              (emittedToolModeToolCalls || emittedToolModeText);
+              (completionMode.type !== "tools" ||
+                (!useNativeToolExecution && (emittedToolModeToolCalls || emittedToolModeText)));
+
+            const canRecoverFromStructuredOutputRetryWithAssistantText =
+              isStructuredOutputRetryExhausted(finalResultMessage) &&
+              completionMode.type !== "tools" &&
+              extractAssistantText(lastAssistantMessage).length > 0;
 
             if (canRecoverFromToolCallError) {
               finishReason = {
@@ -385,6 +390,16 @@ export const runStream = async (args: {
             if (canRecoverFromStructuredOutputRetry) {
               finishReason = {
                 unified: emittedToolModeToolCalls ? "tool-calls" : "stop",
+                raw: "error_max_structured_output_retries_recovered",
+              };
+            }
+
+            if (canRecoverFromStructuredOutputRetryWithAssistantText) {
+              const assistantText = extractAssistantText(lastAssistantMessage);
+              enqueueSingleTextBlock(controller, args.idGenerator, assistantText);
+              emittedToolModeText = true;
+              finishReason = {
+                unified: "stop",
                 raw: "error_max_structured_output_retries_recovered",
               };
             }

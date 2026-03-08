@@ -840,6 +840,72 @@ describe("provider settings contract", () => {
     expect(result.finishReason.unified).toBe("stop");
   });
 
+  test("json mode recovers from structured output retry exhaustion in doGenerate", async () => {
+    const queryCalls: unknown[] = [];
+    const { createAnthropic } = await importIndexWithMockedQuery({
+      queryCalls,
+      messagesFactory: () => {
+        return [
+          {
+            type: "assistant",
+            message: {
+              content: [{ type: "text", text: '{"answer":"ok"}' }],
+            },
+          },
+          {
+            type: "result",
+            subtype: "error_max_structured_output_retries",
+            stop_reason: "end_turn",
+            duration_ms: 1,
+            duration_api_ms: 1,
+            is_error: true,
+            num_turns: 1,
+            total_cost_usd: 0,
+            usage: buildMockResultUsage(),
+            modelUsage: {},
+            permission_denials: [],
+            errors: ['[{"expected":"string","code":"invalid_type","path":["reason"]}]'],
+            uuid: "uuid-json-retry-1",
+            session_id: "session-json-retry-1",
+          },
+        ];
+      },
+    });
+
+    const model = createAnthropic({})("claude-3-5-haiku-latest");
+    const result = await model.doGenerate({
+      prompt: [
+        {
+          role: "user",
+          content: [{ type: "text", text: "json으로 대답" }],
+        },
+      ],
+      responseFormat: {
+        type: "json",
+        schema: {
+          type: "object",
+          additionalProperties: false,
+          required: ["answer", "reason"],
+          properties: {
+            answer: { type: "string" },
+            reason: { type: "string" },
+          },
+        },
+      },
+    });
+
+    const firstContentPart = result.content[0];
+    expect(firstContentPart?.type).toBe("text");
+
+    if (firstContentPart === undefined || firstContentPart.type !== "text") {
+      return;
+    }
+
+    expect(firstContentPart.text).toBe('{"answer":"ok"}');
+    expect(result.finishReason.unified).toBe("stop");
+    expect(result.finishReason.raw).toBe("error_max_structured_output_retries_recovered");
+  });
+
   test("tool mode recovers legacy single tool-call object from assistant text", async () => {
     const queryCalls: unknown[] = [];
     const { createAnthropic } = await importIndexWithMockedQuery({

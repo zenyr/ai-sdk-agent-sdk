@@ -83,18 +83,12 @@ const buildObjectSchema = (schema: Record<string, unknown>): z.ZodTypeAny => {
     shape[propertyKey] = requiredKeys.has(propertyKey) ? valueSchema : valueSchema.optional();
   }
 
-  let objectSchema: z.ZodTypeAny = z.object(shape);
-
   const additionalProperties = readBoolean(schema, "additionalProperties");
   if (additionalProperties === false) {
-    objectSchema = objectSchema.strict();
+    return z.object(shape).strict();
   }
 
-  if (additionalProperties !== false) {
-    objectSchema = objectSchema.passthrough();
-  }
-
-  return objectSchema;
+  return z.object(shape).passthrough();
 };
 
 const buildArraySchema = (schema: Record<string, unknown>): z.ZodTypeAny => {

@@ -77,10 +77,12 @@ export const prepareQueryContext = async (args: {
 
   if (completionMode.type === "json") {
     prompt = `Return only JSON that matches the required schema.\n\n${basePrompt}`;
-    outputFormat = {
-      type: "json_schema",
-      schema: completionMode.schema,
-    };
+    warnings.push({
+      type: "compatibility",
+      feature: "responseFormat.json",
+      details:
+        "claude-agent-sdk json_schema outputFormat is disabled to avoid structured-output retry loops. JSON-only prompt mode is used instead.",
+    });
   }
 
   let queryPrompt: QueryPromptInput = prompt;

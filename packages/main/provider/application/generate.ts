@@ -496,27 +496,36 @@ export const runGenerate = async (args: {
     }
 
     const canRecoverFromStructuredOutputRetry =
-      completionMode.type === "tools" &&
-      content.length === 0 &&
-      isStructuredOutputRetryExhausted(finalResultMessage);
+      content.length === 0 && isStructuredOutputRetryExhausted(finalResultMessage);
 
     if (canRecoverFromStructuredOutputRetry) {
-      const recoveredContent = recoverToolModeContentFromAssistantText({
-        assistantMessage: lastAssistantMessage,
-        idGenerator: args.idGenerator,
-      });
-
-      if (recoveredContent.length > 0) {
-        content = recoveredContent;
-
-        const hasRecoveredToolCalls = recoveredContent.some((part) => {
-          return part.type === "tool-call";
+      if (completionMode.type === "tools") {
+        const recoveredContent = recoverToolModeContentFromAssistantText({
+          assistantMessage: lastAssistantMessage,
+          idGenerator: args.idGenerator,
         });
 
-        finishReason = {
-          unified: hasRecoveredToolCalls ? "tool-calls" : "stop",
-          raw: "error_max_structured_output_retries_recovered",
-        };
+        if (recoveredContent.length > 0) {
+          content = recoveredContent;
+
+          const hasRecoveredToolCalls = recoveredContent.some((part) => {
+            return part.type === "tool-call";
+          });
+
+          finishReason = {
+            unified: hasRecoveredToolCalls ? "tool-calls" : "stop",
+            raw: "error_max_structured_output_retries_recovered",
+          };
+        }
+      } else {
+        const assistantText = extractAssistantText(lastAssistantMessage);
+        if (assistantText.length > 0) {
+          content = [{ type: "text", text: assistantText }];
+          finishReason = {
+            unified: "stop",
+            raw: "error_max_structured_output_retries_recovered",
+          };
+        }
       }
     }
 

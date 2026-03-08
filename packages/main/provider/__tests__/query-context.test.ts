@@ -80,7 +80,7 @@ describe("query-context", () => {
     expect(queryContext.prompt).toBe("hello");
   });
 
-  test("sets json output format and prompt preamble in json mode", async () => {
+  test("uses json prompt preamble and disables json_schema outputFormat", async () => {
     const queryContext = await prepareQueryContext({
       options: {
         prompt: [userMessage("return payload")],
@@ -88,10 +88,13 @@ describe("query-context", () => {
           type: "json",
           schema: {
             type: "object",
-            required: ["ok"],
+            required: ["ok", "reason"],
             properties: {
               ok: {
                 type: "boolean",
+              },
+              reason: {
+                type: "string",
               },
             },
           },
@@ -112,18 +115,12 @@ describe("query-context", () => {
     expect(
       queryContext.prompt.startsWith("Return only JSON that matches the required schema."),
     ).toBeTrue();
-    expect(queryContext.outputFormat).toEqual({
-      type: "json_schema",
-      schema: {
-        type: "object",
-        required: ["ok"],
-        properties: {
-          ok: {
-            type: "boolean",
-          },
-        },
-      },
-    });
+    expect(queryContext.outputFormat).toBeUndefined();
+    expect(
+      queryContext.warnings.some((warning) => {
+        return warning.type === "compatibility" && warning.feature === "responseFormat.json";
+      }),
+    ).toBeTrue();
   });
 
   test("adds partial executor warning when tools are only partially bridged", async () => {

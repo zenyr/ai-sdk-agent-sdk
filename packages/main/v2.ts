@@ -43,6 +43,10 @@ type LegacyGenerateResult = Omit<LanguageModelV3GenerateResult, "finishReason"> 
   reason: string;
 };
 
+type LegacyStreamResult = Omit<LanguageModelV3StreamResult, "stream"> & {
+  stream: ReadableStream<LanguageModelV3StreamPart | LegacyFinishPart>;
+};
+
 const isV2FinishReason = (value: unknown): value is V2FinishReason => {
   return (
     value === "stop" ||
@@ -125,11 +129,11 @@ class AgentSdkAnthropicLanguageModelV2Adapter {
     return legacyResult;
   }
 
-  async doStream(options: LanguageModelV3CallOptions): Promise<LanguageModelV3StreamResult> {
+  async doStream(options: LanguageModelV3CallOptions): Promise<LegacyStreamResult> {
     const streamResult = await this.baseModel.doStream(options);
 
     const stream = streamResult.stream.pipeThrough(
-      new TransformStream<LanguageModelV3StreamPart, LanguageModelV3StreamPart>({
+      new TransformStream<LanguageModelV3StreamPart, LanguageModelV3StreamPart | LegacyFinishPart>({
         transform: (part, controller) => {
           if (part.type !== "finish") {
             controller.enqueue(part);
@@ -167,9 +171,7 @@ const wrapProviderWithLegacyFinish = (provider: ReturnType<typeof createAnthropi
   return legacyProvider;
 };
 
-export const createAnthropic = (
-  options: AgentSdkProviderSettings = {},
-): ReturnType<typeof createAnthropicV3> => {
+export const createAnthropic = (options: AgentSdkProviderSettings = {}) => {
   const provider = createAnthropicV3(options);
   return wrapProviderWithLegacyFinish(provider);
 };
@@ -179,7 +181,6 @@ export const anthropic = wrapProviderWithLegacyFinish(anthropicV3);
 export { VERSION, forwardAnthropicContainerIdFromLastStep };
 
 export type {
-  AgentSdkProviderSettings,
   AnthropicLanguageModelOptions,
   AnthropicMessageMetadata,
   AnthropicProvider,
@@ -187,5 +188,11 @@ export type {
   AnthropicToolOptions,
   AnthropicUsageIteration,
 } from "@ai-sdk/anthropic";
+
+export type {
+  AgentSdkProviderSettings,
+  ToolExecutor,
+  ToolExecutorMap,
+} from "./shared/tool-executor";
 
 export type AnthropicProviderOptions = AnthropicLanguageModelOptions;

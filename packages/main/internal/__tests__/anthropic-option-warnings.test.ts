@@ -1,6 +1,19 @@
 import { describe, expect, test } from "bun:test";
+import type { SharedV3Warning } from "@ai-sdk/provider";
 
 import { collectAnthropicProviderOptionWarnings } from "../anthropic-option-warnings";
+
+const isFeatureWarning = (
+  warning: SharedV3Warning,
+): warning is Extract<SharedV3Warning, { feature: string }> => {
+  return "feature" in warning;
+};
+
+const isUnsupportedFeatureWarning = (
+  warning: SharedV3Warning,
+): warning is Extract<SharedV3Warning, { type: "unsupported" }> => {
+  return warning.type === "unsupported";
+};
 
 describe("collectAnthropicProviderOptionWarnings", () => {
   test("returns empty when provider options are missing", () => {
@@ -31,7 +44,7 @@ describe("collectAnthropicProviderOptionWarnings", () => {
     expect(warnings.length).toBe(3);
 
     const features = warnings
-      .filter((warning) => "feature" in warning)
+      .filter(isFeatureWarning)
       .map((warning) => warning.feature)
       .sort();
 
@@ -40,17 +53,18 @@ describe("collectAnthropicProviderOptionWarnings", () => {
       "providerOptions.anthropic.sendReasoning",
     ]);
 
-    const cacheControlWarning = warnings.find((warning) => {
-      return (
-        warning.type === "unsupported" &&
-        "feature" in warning &&
-        warning.feature === "providerOptions.anthropic.cacheControl"
-      );
-    });
+    const cacheControlWarning = warnings.find(
+      (warning): warning is Extract<SharedV3Warning, { type: "unsupported"; feature: string }> => {
+        return (
+          isUnsupportedFeatureWarning(warning) &&
+          warning.feature === "providerOptions.anthropic.cacheControl"
+        );
+      },
+    );
 
     expect(cacheControlWarning).toBeDefined();
 
-    if (cacheControlWarning !== undefined) {
+    if (cacheControlWarning !== undefined && typeof cacheControlWarning.details === "string") {
       expect(cacheControlWarning.details.includes("1h cache")).toBeTrue();
     }
 
