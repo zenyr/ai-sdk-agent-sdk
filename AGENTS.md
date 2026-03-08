@@ -115,3 +115,8 @@ root.render(<Frontend />);
 
 - Run dev server with `bun --hot ./index.ts`.
 - For more Bun API details, read `node_modules/bun-types/docs/**.mdx`.
+
+## OpenTUI
+
+- After OpenTUI troubleshooting/implementation, update `refs/opentui.md` if new reusable findings exist.
+- Keep `refs/opentui.md` in same style: concision over grammar, no data loss, short bullets, implementation-first notes.

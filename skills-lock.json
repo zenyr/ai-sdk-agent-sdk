@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "skills": {
+    "opentui-react": {
+      "source": "dimitrigilbert/ai-skills",
+      "sourceType": "github",
+      "computedHash": "65fa9c0f8b3bc9e6d3eb8d22f91f4688b37703781a19dd0daa68d8cae243d295"
+    }
+  }
+}
