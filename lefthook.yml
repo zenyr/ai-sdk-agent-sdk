@@ -1,7 +1,7 @@
 pre-commit:
   commands:
     lint:
-      glob: "*.{js,cjs,mjs,ts,tsx,json,jsonc,md,yml,yaml}"
+      glob: "**/*.{js,cjs,mjs,ts,tsx,json,jsonc,md,yml,yaml}"
       run: bunx biome check --no-errors-on-unmatched {staged_files}
 
 commit-msg:
