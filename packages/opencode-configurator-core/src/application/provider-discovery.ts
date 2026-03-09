@@ -61,25 +61,60 @@ const getFormattingOptions = () => ({
   tabSize: 2,
 });
 
-export const applyProviderBlockToDocument = (
-  text: string,
-  containerKey: ConfigContainerKey,
-  providerId: string,
-  providerBlock: ProviderConfig
-) => {
-  const edits = modify(text, [containerKey, providerId], providerBlock, {
+const applyDocumentEdit = (text: string, path: (string | number)[], value: unknown) => {
+  const edits = modify(text, path, value, {
     formattingOptions: getFormattingOptions(),
   });
 
   return applyEdits(text, edits);
 };
 
-export const removeProviderBlockFromDocument = (text: string, containerKey: ConfigContainerKey, providerId: string) => {
-  const edits = modify(text, [containerKey, providerId], undefined, {
-    formattingOptions: getFormattingOptions(),
+const syncObjectValue = (text: string, basePath: string[], currentValue: unknown, nextValue: unknown): string => {
+  if (!isRecord(currentValue) || !isRecord(nextValue)) {
+    return applyDocumentEdit(text, basePath, nextValue);
+  }
+
+  let nextText = text;
+
+  for (const key of Object.keys(currentValue)) {
+    if (!(key in nextValue)) {
+      nextText = applyDocumentEdit(nextText, [...basePath, key], undefined);
+    }
+  }
+
+  for (const [key, childValue] of Object.entries(nextValue)) {
+    nextText = syncObjectValue(nextText, [...basePath, key], currentValue[key], childValue);
+  }
+
+  return nextText;
+};
+
+export const applyProviderBlockToDocument = (
+  text: string,
+  containerKey: ConfigContainerKey,
+  providerId: string,
+  providerBlock: ProviderConfig & Record<string, unknown>
+) => {
+  const existingProviderRecord = readProviderRecord(text, {
+    containerKey,
+    providerId,
   });
 
-  return applyEdits(text, edits);
+  if (existingProviderRecord === undefined) {
+    return applyDocumentEdit(text, [containerKey, providerId], providerBlock);
+  }
+
+  let nextText = text;
+
+  for (const [key, value] of Object.entries(providerBlock)) {
+    nextText = syncObjectValue(nextText, [containerKey, providerId, key], existingProviderRecord[key], value);
+  }
+
+  return nextText;
+};
+
+export const removeProviderBlockFromDocument = (text: string, containerKey: ConfigContainerKey, providerId: string) => {
+  return applyDocumentEdit(text, [containerKey, providerId], undefined);
 };
 
 export const resolveGlobalConfigDirectory = (runtime: Runtime) => {

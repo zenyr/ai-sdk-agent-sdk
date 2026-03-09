@@ -81,14 +81,10 @@ export const prepareProviderConfig = async (
         existingProviderRecord.options.experimental_agentSdk &&
         typeof existingProviderRecord.options.experimental_agentSdk === "object"
           ? existingProviderRecord.options.experimental_agentSdk
-          : existingProviderRecord?.experimental_agentSdk &&
-              typeof existingProviderRecord.experimental_agentSdk === "object"
-            ? existingProviderRecord.experimental_agentSdk
-            : {},
+          : {},
       setCacheKey: true,
     },
   };
-  delete providerBlock.experimental_agentSdk;
   const nextText = applyProviderBlockToDocument(currentText, target.containerKey, options.providerId, providerBlock);
 
   return {

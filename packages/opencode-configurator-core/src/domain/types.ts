@@ -110,7 +110,7 @@ export type PreparedConfig = {
   selectedPolicy: SelectionPolicy;
   manifest: Manifest;
   selectedModels: ManifestModel[];
-  providerBlock: ProviderConfig;
+  providerBlock: ProviderConfig & Record<string, unknown>;
   currentText: string;
   nextText: string;
 };

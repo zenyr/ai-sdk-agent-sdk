@@ -124,6 +124,59 @@ describe("configurator service", () => {
     expect(prepared.nextText.includes('"npm": "file:///tmp/custom-agent-sdk.js"')).toBeTrue();
   });
 
+  test("preserves jsonc comments inside existing provider block", async () => {
+    const { runtime } = createMemoryRuntime({
+      env: {
+        XDG_CONFIG_HOME: "/xdg",
+      },
+      files: {
+        "/xdg/opencode/opencode.jsonc": `{
+  "provider": {
+    "agent-sdk": {
+      // keep npm comment
+      "npm": "file:///tmp/custom-agent-sdk.js",
+      // keep custom field comment
+      "headers": {
+        "x-test": "1"
+      },
+      "options": {
+        // keep option comment
+        "baseURL": "https://proxy.example.test/api",
+        "setCacheKey": false
+      },
+      "models": {
+        "claude-haiku-4-5": {
+          // keep model comment
+          "name": "Claude Haiku 4.5",
+          "release_date": "2025-10-01",
+          "attachment": true,
+          "reasoning": false,
+          "tool_call": true,
+          "temperature": true,
+          "limit": {
+            "context": 1,
+            "output": 1
+          }
+        }
+      }
+    }
+  }
+}`,
+      },
+      fetchText: modelsPayload,
+    });
+
+    const prepared = await prepareProviderConfig(runtime, {
+      scope: "global",
+      userAgent: "test/1.0.0",
+    });
+
+    expect(prepared.nextText.includes("// keep npm comment")).toBeTrue();
+    expect(prepared.nextText.includes("// keep custom field comment")).toBeTrue();
+    expect(prepared.nextText.includes("// keep option comment")).toBeTrue();
+    expect(prepared.nextText.includes("// keep model comment")).toBeTrue();
+  });
+
   test("forces setCacheKey true while preserving baseURL", async () => {
     const { runtime } = createMemoryRuntime({
       env: {
@@ -164,30 +217,6 @@ describe("configurator service", () => {
 
     expect(prepared.nextText.includes('"options": {')).toBeTrue();
     expect(prepared.nextText.includes('"experimental_agentSdk": {}')).toBeTrue();
-  });
-
-  test("moves existing top-level experimental_agentSdk under options", async () => {
-    const { runtime } = createMemoryRuntime({
-      env: {
-        XDG_CONFIG_HOME: "/xdg",
-      },
-      files: {
-        "/xdg/opencode/opencode.jsonc":
-          '{"provider":{"agent-sdk":{"experimental_agentSdk":{"cwd":"/tmp/agent","debug":true},"models":{"claude-haiku-4-5":{}}}}}',
-      },
-      fetchText: modelsPayload,
-    });
-
-    const prepared = await prepareProviderConfig(runtime, {
-      scope: "global",
-      userAgent: "test/1.0.0",
-    });
-
-    expect(prepared.nextText.includes('"options": {')).toBeTrue();
-    expect(prepared.nextText.includes('"experimental_agentSdk": {')).toBeTrue();
-    expect(prepared.nextText.includes('"cwd": "/tmp/agent"')).toBeTrue();
-    expect(prepared.nextText.includes('"debug": true')).toBeTrue();
-    expect(prepared.nextText.includes('},"experimental_agentSdk"')).toBeFalse();
   });
 
   test("preserves existing nested options.experimental_agentSdk config", async () => {
