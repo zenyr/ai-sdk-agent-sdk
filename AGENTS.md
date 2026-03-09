@@ -9,6 +9,21 @@
 - Code comments, docs, commit/PR text: plain layman's English.
 - User-facing conversation: always same language as user.
 
+## Commit workflow
+
+- Avoid one giant catch-all commit.
+- Group related changes into clear, stable commits.
+- Keep commit count lean; no zig-zag micro commits.
+- Use Conventional Commits.
+- Subject: short, scannable.
+- Body: optional. Add only when context/value is real.
+
+## Token efficiency
+
+- Default to minimal tokens in discussion and docs.
+- Keep intent, constraints, and verification; cut filler.
+- Prefer short bullets over long prose.
+
 ## TypeScript coding style
 
 - Prefer `const` function expressions over function statements.
@@ -100,3 +115,8 @@ root.render(<Frontend />);
 
 - Run dev server with `bun --hot ./index.ts`.
 - For more Bun API details, read `node_modules/bun-types/docs/**.mdx`.
+
+## OpenTUI
+
+- After OpenTUI troubleshooting/implementation, update `refs/opentui.md` if new reusable findings exist.
+- Keep `refs/opentui.md` in same style: concision over grammar, no data loss, short bullets, implementation-first notes.

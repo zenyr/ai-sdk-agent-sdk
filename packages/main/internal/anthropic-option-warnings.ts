@@ -1,5 +1,7 @@
 import type { SharedV3ProviderOptions, SharedV3Warning } from "@ai-sdk/provider";
 
+import { resolveAnthropicProviderOptions } from "../bridge/parse-utils";
+
 const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === "object" && value !== null;
 };
@@ -22,14 +24,14 @@ const UNSUPPORTED_OPTION_DETAILS: Record<string, string> = {
 
 const MAPPED_OPTIONS = new Set(["effort", "thinking"]);
 
-export const collectAnthropicProviderOptionWarnings = (
-  providerOptions: SharedV3ProviderOptions | undefined,
-): SharedV3Warning[] => {
-  if (!isRecord(providerOptions)) {
-    return [];
-  }
-
-  const anthropicOptions = providerOptions.anthropic;
+export const collectAnthropicProviderOptionWarnings = (args: {
+  providerOptions: SharedV3ProviderOptions | undefined;
+  provider: string;
+}): SharedV3Warning[] => {
+  const anthropicOptions = resolveAnthropicProviderOptions({
+    providerOptions: args.providerOptions,
+    provider: args.provider,
+  });
   if (!isRecord(anthropicOptions)) {
     return [];
   }
@@ -44,7 +46,7 @@ export const collectAnthropicProviderOptionWarnings = (
     if (DEGRADE_ONLY_OPTIONS.has(optionName)) {
       warnings.push({
         type: "compatibility",
-        feature: `providerOptions.anthropic.${optionName}`,
+        feature: `providerOptions.${args.provider}.${optionName}`,
         details: "This option is accepted but behavior may differ on the Agent SDK backend.",
       });
       continue;
@@ -53,7 +55,7 @@ export const collectAnthropicProviderOptionWarnings = (
     if (optionName in UNSUPPORTED_OPTION_DETAILS) {
       warnings.push({
         type: "unsupported",
-        feature: `providerOptions.anthropic.${optionName}`,
+        feature: `providerOptions.${args.provider}.${optionName}`,
         details: UNSUPPORTED_OPTION_DETAILS[optionName],
       });
       continue;

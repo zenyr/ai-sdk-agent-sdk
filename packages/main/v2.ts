@@ -7,29 +7,16 @@ import type {
   LanguageModelV3StreamResult,
 } from "@ai-sdk/provider";
 
-import {
-  anthropic as anthropicV3,
-  createAnthropic as createAnthropicV3,
-} from "./provider/create-anthropic";
+import { anthropic as anthropicV3, createAnthropic as createAnthropicV3 } from "./provider/create-anthropic";
 import { forwardAnthropicContainerIdFromLastStep } from "./provider/forward-container";
 import { VERSION } from "./shared/constants";
 
 import type { AgentSdkProviderSettings } from "./shared/tool-executor";
 import { isRecord } from "./shared/type-readers";
 
-type V2FinishReason =
-  | "stop"
-  | "length"
-  | "content-filter"
-  | "tool-calls"
-  | "error"
-  | "other"
-  | "unknown";
+type V2FinishReason = "stop" | "length" | "content-filter" | "tool-calls" | "error" | "other" | "unknown";
 
-type LegacyFinishPart = Omit<
-  Extract<LanguageModelV3StreamPart, { type: "finish" }>,
-  "finishReason"
-> & {
+type LegacyFinishPart = Omit<Extract<LanguageModelV3StreamPart, { type: "finish" }>, "finishReason"> & {
   finishReason: V2FinishReason;
   rawFinishReason?: string;
   finish: V2FinishReason;
@@ -41,6 +28,10 @@ type LegacyGenerateResult = Omit<LanguageModelV3GenerateResult, "finishReason"> 
   rawFinishReason?: string;
   finish: V2FinishReason;
   reason: string;
+};
+
+type LegacyStreamResult = Omit<LanguageModelV3StreamResult, "stream"> & {
+  stream: ReadableStream<LanguageModelV3StreamPart | LegacyFinishPart>;
 };
 
 const isV2FinishReason = (value: unknown): value is V2FinishReason => {
@@ -77,9 +68,7 @@ const readRawFinishReason = (value: unknown): string | undefined => {
   return typeof raw === "string" ? raw : undefined;
 };
 
-const withLegacyFinish = (
-  part: Extract<LanguageModelV3StreamPart, { type: "finish" }>,
-): LegacyFinishPart => {
+const withLegacyFinish = (part: Extract<LanguageModelV3StreamPart, { type: "finish" }>): LegacyFinishPart => {
   const finish = mapFinishReasonToV2(part.finishReason);
   const rawFinishReason = readRawFinishReason(part.finishReason);
   const reason = rawFinishReason ?? finish;
@@ -125,11 +114,11 @@ class AgentSdkAnthropicLanguageModelV2Adapter {
     return legacyResult;
   }
 
-  async doStream(options: LanguageModelV3CallOptions): Promise<LanguageModelV3StreamResult> {
+  async doStream(options: LanguageModelV3CallOptions): Promise<LegacyStreamResult> {
     const streamResult = await this.baseModel.doStream(options);
 
     const stream = streamResult.stream.pipeThrough(
-      new TransformStream<LanguageModelV3StreamPart, LanguageModelV3StreamPart>({
+      new TransformStream<LanguageModelV3StreamPart, LanguageModelV3StreamPart | LegacyFinishPart>({
         transform: (part, controller) => {
           if (part.type !== "finish") {
             controller.enqueue(part);
@@ -138,7 +127,7 @@ class AgentSdkAnthropicLanguageModelV2Adapter {
 
           controller.enqueue(withLegacyFinish(part));
         },
-      }),
+      })
     );
 
     return {
@@ -167,9 +156,7 @@ const wrapProviderWithLegacyFinish = (provider: ReturnType<typeof createAnthropi
   return legacyProvider;
 };
 
-export const createAnthropic = (
-  options: AgentSdkProviderSettings = {},
-): ReturnType<typeof createAnthropicV3> => {
+export const createAnthropic = (options: AgentSdkProviderSettings = {}) => {
   const provider = createAnthropicV3(options);
   return wrapProviderWithLegacyFinish(provider);
 };
@@ -179,7 +166,6 @@ export const anthropic = wrapProviderWithLegacyFinish(anthropicV3);
 export { VERSION, forwardAnthropicContainerIdFromLastStep };
 
 export type {
-  AgentSdkProviderSettings,
   AnthropicLanguageModelOptions,
   AnthropicMessageMetadata,
   AnthropicProvider,
@@ -187,5 +173,11 @@ export type {
   AnthropicToolOptions,
   AnthropicUsageIteration,
 } from "@ai-sdk/anthropic";
+
+export type {
+  AgentSdkProviderSettings,
+  ToolExecutor,
+  ToolExecutorMap,
+} from "./shared/tool-executor";
 
 export type AnthropicProviderOptions = AnthropicLanguageModelOptions;

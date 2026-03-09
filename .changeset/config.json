@@ -7,5 +7,5 @@
   "access": "public",
   "baseBranch": "main",
   "updateInternalDependencies": "patch",
-  "ignore": []
+  "ignore": ["@zenyr/ai-sdk-agent-sdk-adapter-v2", "@zenyr/ai-sdk-agent-sdk-adapter-v3"]
 }

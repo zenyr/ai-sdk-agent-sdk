@@ -1,7 +1,20 @@
-import { afterEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+
+const originalOpenCode = process.env.OPENCODE;
+
+beforeEach(() => {
+  delete process.env.OPENCODE;
+});
 
 afterEach(() => {
   mock.restore();
+
+  if (originalOpenCode === undefined) {
+    delete process.env.OPENCODE;
+    return;
+  }
+
+  process.env.OPENCODE = originalOpenCode;
 });
 
 const buildMockResultUsage = () => {
@@ -21,6 +34,16 @@ const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === "object" && value !== null;
 };
 
+const readRecordValue = (value: Record<string, unknown>, key: string): Record<string, unknown> | undefined => {
+  const candidate = value[key];
+  return isRecord(candidate) ? candidate : undefined;
+};
+
+const readStringValue = (value: Record<string, unknown>, key: string): string | undefined => {
+  const candidate = value[key];
+  return typeof candidate === "string" ? candidate : undefined;
+};
+
 const isAsyncIterable = (value: unknown): value is AsyncIterable<unknown> => {
   if (!isRecord(value)) {
     return false;
@@ -34,9 +57,7 @@ const isAsyncIterable = (value: unknown): value is AsyncIterable<unknown> => {
   return typeof asyncIterator === "function";
 };
 
-const readFirstPromptStreamMessage = async (
-  queryCall: unknown,
-): Promise<Record<string, unknown> | undefined> => {
+const readFirstPromptStreamMessage = async (queryCall: unknown): Promise<Record<string, unknown> | undefined> => {
   if (!isRecord(queryCall)) {
     return undefined;
   }
@@ -148,13 +169,8 @@ describe("stream bridge contract", () => {
       parts.push(part);
     }
 
-    const metadataPart = parts.find((part) => {
-      return (
-        typeof part === "object" &&
-        part !== null &&
-        "type" in part &&
-        part.type === "response-metadata"
-      );
+    const metadataPart = parts.find(part => {
+      return typeof part === "object" && part !== null && "type" in part && part.type === "response-metadata";
     });
 
     expect(metadataPart).toBeDefined();
@@ -171,15 +187,13 @@ describe("stream bridge contract", () => {
     expect(metadataPart.id).toBe("msg-1");
     expect(metadataPart.modelId).toBe("mock-model");
 
-    const hasTextDelta = parts.some((part) => {
-      return (
-        typeof part === "object" && part !== null && "type" in part && part.type === "text-delta"
-      );
+    const hasTextDelta = parts.some(part => {
+      return typeof part === "object" && part !== null && "type" in part && part.type === "text-delta";
     });
 
     expect(hasTextDelta).toBeTrue();
 
-    const finishPart = parts.find((part) => {
+    const finishPart = parts.find(part => {
       return typeof part === "object" && part !== null && "type" in part && part.type === "finish";
     });
 
@@ -243,15 +257,12 @@ describe("stream bridge contract", () => {
     expect(typeof firstCall).toBe("object");
     expect(firstCall).not.toBeNull();
 
-    if (typeof firstCall !== "object" || firstCall === null) {
+    if (!isRecord(firstCall)) {
       return;
     }
 
-    const options =
-      typeof firstCall.options === "object" && firstCall.options !== null
-        ? firstCall.options
-        : undefined;
-    const prompt = typeof firstCall.prompt === "string" ? firstCall.prompt : undefined;
+    const options = readRecordValue(firstCall, "options");
+    const prompt = readStringValue(firstCall, "prompt");
 
     expect(options).toBeDefined();
     expect(prompt).toBeDefined();
@@ -260,8 +271,7 @@ describe("stream bridge contract", () => {
       return;
     }
 
-    const systemPrompt =
-      typeof options.systemPrompt === "string" ? options.systemPrompt : undefined;
+    const systemPrompt = typeof options.systemPrompt === "string" ? options.systemPrompt : undefined;
     expect(systemPrompt).toBe("Follow system rules.");
     expect(prompt.includes("[system]")).toBeFalse();
     expect(prompt.includes("[user]")).toBeFalse();
@@ -376,24 +386,128 @@ describe("stream bridge contract", () => {
       parts.push(part);
     }
 
-    const textDeltas = parts.filter((part) => {
-      return (
-        typeof part === "object" && part !== null && "type" in part && part.type === "text-delta"
-      );
+    const textDeltas = parts.filter(part => {
+      return typeof part === "object" && part !== null && "type" in part && part.type === "text-delta";
     });
 
     expect(textDeltas.length).toBe(1);
 
     const firstTextDelta = textDeltas[0];
-    if (
-      typeof firstTextDelta !== "object" ||
-      firstTextDelta === null ||
-      !("delta" in firstTextDelta)
-    ) {
+    if (typeof firstTextDelta !== "object" || firstTextDelta === null || !("delta" in firstTextDelta)) {
       return;
     }
 
     expect(firstTextDelta.delta).toBe("안녕하세요! 무엇을 도와드릴까요?");
+  });
+
+  test("tool mode surfaces plain fallback text when provider-side tool execution is unavailable", async () => {
+    mock.module("@anthropic-ai/claude-agent-sdk", () => {
+      return {
+        query: async function* () {
+          yield {
+            type: "stream_event",
+            event: {
+              type: "message_start",
+              message: {
+                id: "msg-fallback",
+                model: "mock-model",
+              },
+            },
+          };
+
+          yield {
+            type: "stream_event",
+            event: {
+              type: "content_block_start",
+              index: 0,
+              content_block: {
+                type: "text",
+                text: "",
+              },
+            },
+          };
+
+          yield {
+            type: "stream_event",
+            event: {
+              type: "content_block_delta",
+              index: 0,
+              delta: {
+                type: "text_delta",
+                text: "죄송합니다, 외부 도구가 비활성화되어 있어 실시간 정보를 가져올 수 없습니다.",
+              },
+            },
+          };
+
+          yield {
+            type: "stream_event",
+            event: {
+              type: "content_block_stop",
+              index: 0,
+            },
+          };
+
+          yield {
+            type: "result",
+            subtype: "success",
+            stop_reason: "end_turn",
+            result: "",
+            usage: buildMockResultUsage(),
+          };
+        },
+      };
+    });
+
+    const moduleId = `../index.ts?stream-contract-fallback-${Date.now()}-${Math.random()}`;
+    const { createAnthropic } = await import(moduleId);
+
+    const streamResult = await createAnthropic({})("claude-3-5-haiku-latest").doStream({
+      prompt: [
+        {
+          role: "user",
+          content: [{ type: "text", text: "서울 날씨 어때?" }],
+        },
+      ],
+      tools: [
+        {
+          type: "function",
+          name: "websearch",
+          description: "Search web",
+          inputSchema: {
+            type: "object",
+            additionalProperties: false,
+            required: ["query"],
+            properties: {
+              query: {
+                type: "string",
+              },
+            },
+          },
+        },
+      ],
+      toolChoice: { type: "required" },
+    });
+
+    const parts: unknown[] = [];
+    for await (const part of streamResult.stream) {
+      parts.push(part);
+    }
+
+    const errorPart = parts.find(part => {
+      return typeof part === "object" && part !== null && "type" in part && part.type === "error";
+    });
+    expect(errorPart).toBeUndefined();
+
+    const textDeltaPart = parts.find(part => {
+      return typeof part === "object" && part !== null && "type" in part && part.type === "text-delta";
+    });
+    expect(textDeltaPart).toBeDefined();
+
+    if (typeof textDeltaPart !== "object" || textDeltaPart === null || !("delta" in textDeltaPart)) {
+      return;
+    }
+
+    expect(String(textDeltaPart.delta)).toContain("외부 도구가 비활성화되어 있어");
   });
 
   test("doStream reuses claude session with appended prompt messages", async () => {
@@ -462,11 +576,11 @@ describe("stream bridge contract", () => {
     expect(typeof secondCall).toBe("object");
     expect(secondCall).not.toBeNull();
 
-    if (typeof secondCall !== "object" || secondCall === null) {
+    if (!isRecord(secondCall)) {
       return;
     }
 
-    const secondPrompt = typeof secondCall.prompt === "string" ? secondCall.prompt : undefined;
+    const secondPrompt = readStringValue(secondCall, "prompt");
     expect(secondPrompt).toBeDefined();
 
     if (secondPrompt === undefined) {
@@ -476,10 +590,7 @@ describe("stream bridge contract", () => {
     expect(secondPrompt.includes("첫 질문")).toBeFalse();
     expect(secondPrompt.includes("두 번째 질문")).toBeTrue();
 
-    const options =
-      typeof secondCall.options === "object" && secondCall.options !== null
-        ? secondCall.options
-        : undefined;
+    const options = readRecordValue(secondCall, "options");
     expect(options).toBeDefined();
 
     if (options === undefined) {
@@ -557,14 +668,11 @@ describe("stream bridge contract", () => {
     expect(typeof secondCall).toBe("object");
     expect(secondCall).not.toBeNull();
 
-    if (typeof secondCall !== "object" || secondCall === null) {
+    if (!isRecord(secondCall)) {
       return;
     }
 
-    const options =
-      typeof secondCall.options === "object" && secondCall.options !== null
-        ? secondCall.options
-        : undefined;
+    const options = readRecordValue(secondCall, "options");
 
     expect(options).toBeDefined();
 
@@ -575,7 +683,101 @@ describe("stream bridge contract", () => {
     const resume = typeof options.resume === "string" ? options.resume : undefined;
     expect(resume).toBe("stream-header-session-1");
 
-    const secondPrompt = typeof secondCall.prompt === "string" ? secondCall.prompt : undefined;
+    const secondPrompt = readStringValue(secondCall, "prompt");
+    expect(secondPrompt).toBeDefined();
+
+    if (secondPrompt === undefined) {
+      return;
+    }
+
+    expect(secondPrompt.includes("첫 질문")).toBeFalse();
+    expect(secondPrompt.includes("두 번째 질문")).toBeTrue();
+  });
+
+  test("doStream reuses session from init system message when result omits session id", async () => {
+    const conversationId = createUniqueCacheKey("conversation-stream-init-system");
+    const queryCalls: unknown[] = [];
+    let callCount = 0;
+
+    mock.module("@anthropic-ai/claude-agent-sdk", () => {
+      return {
+        query: async function* (request: unknown) {
+          queryCalls.push(request);
+          callCount += 1;
+
+          yield {
+            type: "system",
+            subtype: "init",
+            session_id: `stream-init-system-${callCount}`,
+          };
+
+          yield {
+            type: "result",
+            subtype: "success",
+            stop_reason: "end_turn",
+            result: "ok",
+            usage: buildMockResultUsage(),
+          };
+        },
+      };
+    });
+
+    const moduleId = `../index.ts?stream-contract-init-system-resume-${Date.now()}-${Math.random()}`;
+    const { anthropic } = await import(moduleId);
+    const model = anthropic("claude-3-5-haiku-latest");
+
+    const firstStreamResult = await model.doStream({
+      prompt: [
+        {
+          role: "user",
+          content: [{ type: "text", text: "첫 질문" }],
+        },
+      ],
+      headers: {
+        "x-conversation-id": conversationId,
+      },
+    });
+    for await (const _part of firstStreamResult.stream) {
+      // consume to completion
+    }
+
+    const secondStreamResult = await model.doStream({
+      prompt: [
+        {
+          role: "user",
+          content: [{ type: "text", text: "두 번째 질문" }],
+        },
+      ],
+      headers: {
+        "x-conversation-id": conversationId,
+      },
+    });
+    for await (const _part of secondStreamResult.stream) {
+      // consume to completion
+    }
+
+    expect(queryCalls.length).toBe(2);
+
+    const secondCall = queryCalls[1];
+    expect(typeof secondCall).toBe("object");
+    expect(secondCall).not.toBeNull();
+
+    if (!isRecord(secondCall)) {
+      return;
+    }
+
+    const options = readRecordValue(secondCall, "options");
+
+    expect(options).toBeDefined();
+
+    if (options === undefined) {
+      return;
+    }
+
+    const resume = typeof options.resume === "string" ? options.resume : undefined;
+    expect(resume).toBe("stream-init-system-1");
+
+    const secondPrompt = readStringValue(secondCall, "prompt");
     expect(secondPrompt).toBeDefined();
 
     if (secondPrompt === undefined) {
@@ -652,7 +854,7 @@ describe("stream bridge contract", () => {
       return;
     }
 
-    const imageBlock = content.find((contentBlock) => {
+    const imageBlock = content.find(contentBlock => {
       return isRecord(contentBlock) && contentBlock.type === "image";
     });
 
@@ -739,14 +941,11 @@ describe("stream bridge contract", () => {
     expect(typeof secondCall).toBe("object");
     expect(secondCall).not.toBeNull();
 
-    if (typeof secondCall !== "object" || secondCall === null) {
+    if (!isRecord(secondCall)) {
       return;
     }
 
-    const options =
-      typeof secondCall.options === "object" && secondCall.options !== null
-        ? secondCall.options
-        : undefined;
+    const options = readRecordValue(secondCall, "options");
 
     expect(options).toBeDefined();
 
@@ -866,10 +1065,8 @@ describe("stream bridge contract", () => {
       parts.push(part);
     }
 
-    const toolCallPart = parts.find((part) => {
-      return (
-        typeof part === "object" && part !== null && "type" in part && part.type === "tool-call"
-      );
+    const toolCallPart = parts.find(part => {
+      return typeof part === "object" && part !== null && "type" in part && part.type === "tool-call";
     });
 
     expect(toolCallPart).toBeDefined();
@@ -886,7 +1083,7 @@ describe("stream bridge contract", () => {
     expect(toolCallPart.toolName).toBe("lookup_weather");
     expect(toolCallPart.input).toBe('{"city":"seoul"}');
 
-    const finishPart = parts.find((part) => {
+    const finishPart = parts.find(part => {
       return typeof part === "object" && part !== null && "type" in part && part.type === "finish";
     });
 
@@ -1027,10 +1224,8 @@ describe("stream bridge contract", () => {
       parts.push(part);
     }
 
-    const toolCallPart = parts.find((part) => {
-      return (
-        typeof part === "object" && part !== null && "type" in part && part.type === "tool-call"
-      );
+    const toolCallPart = parts.find(part => {
+      return typeof part === "object" && part !== null && "type" in part && part.type === "tool-call";
     });
 
     expect(toolCallPart).toBeDefined();
@@ -1049,24 +1244,19 @@ describe("stream bridge contract", () => {
     expect(toolCallPart.toolName).toBe("bash");
     expect(String(toolCallPart.input)).toContain("Math.random");
 
-    const toolInputEndPart = parts.find((part) => {
-      return (
-        typeof part === "object" &&
-        part !== null &&
-        "type" in part &&
-        part.type === "tool-input-end"
-      );
+    const toolInputEndPart = parts.find(part => {
+      return typeof part === "object" && part !== null && "type" in part && part.type === "tool-input-end";
     });
 
     expect(toolInputEndPart).toBeDefined();
 
-    const errorPart = parts.find((part) => {
+    const errorPart = parts.find(part => {
       return typeof part === "object" && part !== null && "type" in part && part.type === "error";
     });
 
     expect(errorPart).toBeUndefined();
 
-    const finishPart = parts.find((part) => {
+    const finishPart = parts.find(part => {
       return typeof part === "object" && part !== null && "type" in part && part.type === "finish";
     });
 
@@ -1196,10 +1386,8 @@ describe("stream bridge contract", () => {
       parts.push(part);
     }
 
-    const toolCallPart = parts.find((part) => {
-      return (
-        typeof part === "object" && part !== null && "type" in part && part.type === "tool-call"
-      );
+    const toolCallPart = parts.find(part => {
+      return typeof part === "object" && part !== null && "type" in part && part.type === "tool-call";
     });
 
     expect(toolCallPart).toBeDefined();
@@ -1218,7 +1406,7 @@ describe("stream bridge contract", () => {
     expect(toolCallPart.toolName).toBe("bash");
     expect(String(toolCallPart.input)).toContain("Math.random");
 
-    const finishPart = parts.find((part) => {
+    const finishPart = parts.find(part => {
       return typeof part === "object" && part !== null && "type" in part && part.type === "finish";
     });
 
@@ -1353,10 +1541,8 @@ describe("stream bridge contract", () => {
       parts.push(part);
     }
 
-    const toolCallPart = parts.find((part) => {
-      return (
-        typeof part === "object" && part !== null && "type" in part && part.type === "tool-call"
-      );
+    const toolCallPart = parts.find(part => {
+      return typeof part === "object" && part !== null && "type" in part && part.type === "tool-call";
     });
 
     expect(toolCallPart).toBeDefined();
@@ -1451,7 +1637,7 @@ describe("stream bridge contract", () => {
       parts.push(part);
     }
 
-    const errorPart = parts.find((part) => {
+    const errorPart = parts.find(part => {
       return typeof part === "object" && part !== null && "type" in part && part.type === "error";
     });
 
@@ -1461,9 +1647,9 @@ describe("stream bridge contract", () => {
       return;
     }
 
-    expect(String(errorPart.error)).toContain("Tool routing produced no tool call");
+    expect(String(errorPart.error)).toContain("Tool routing finished without a final text response");
 
-    const finishPart = parts.find((part) => {
+    const finishPart = parts.find(part => {
       return typeof part === "object" && part !== null && "type" in part && part.type === "finish";
     });
 
@@ -1604,16 +1790,14 @@ describe("stream bridge contract", () => {
       parts.push(part);
     }
 
-    const errorPart = parts.find((part) => {
+    const errorPart = parts.find(part => {
       return typeof part === "object" && part !== null && "type" in part && part.type === "error";
     });
 
     expect(errorPart).toBeUndefined();
 
-    const textDelta = parts.find((part) => {
-      return (
-        typeof part === "object" && part !== null && "type" in part && part.type === "text-delta"
-      );
+    const textDelta = parts.find(part => {
+      return typeof part === "object" && part !== null && "type" in part && part.type === "text-delta";
     });
 
     expect(textDelta).toBeDefined();
@@ -1624,7 +1808,7 @@ describe("stream bridge contract", () => {
 
     expect(textDelta.delta).toBe("안녕하세요");
 
-    const finishPart = parts.find((part) => {
+    const finishPart = parts.find(part => {
       return typeof part === "object" && part !== null && "type" in part && part.type === "finish";
     });
 
@@ -1640,5 +1824,93 @@ describe("stream bridge contract", () => {
     }
 
     expect(finishReason.unified).toBe("stop");
+  });
+
+  test("json mode suppresses structured output retry error when assistant text exists", async () => {
+    mock.module("@anthropic-ai/claude-agent-sdk", () => {
+      return {
+        query: async function* () {
+          yield {
+            type: "assistant",
+            message: {
+              content: [{ type: "text", text: '{"answer":"ok"}' }],
+            },
+          };
+
+          yield {
+            type: "result",
+            subtype: "error_max_structured_output_retries",
+            stop_reason: "end_turn",
+            duration_ms: 1,
+            duration_api_ms: 1,
+            is_error: true,
+            num_turns: 1,
+            total_cost_usd: 0,
+            usage: buildMockResultUsage(),
+            modelUsage: {},
+            permission_denials: [],
+            errors: ['[{"expected":"string","code":"invalid_type","path":["reason"]}]'],
+            uuid: "uuid-json-stream-retry",
+            session_id: "session-json-stream-retry",
+          };
+        },
+      };
+    });
+
+    const moduleId = `../index.ts?stream-contract-json-retry-${Date.now()}-${Math.random()}`;
+    const { anthropic } = await import(moduleId);
+
+    const streamResult = await anthropic("claude-3-5-haiku-latest").doStream({
+      prompt: [
+        {
+          role: "user",
+          content: [{ type: "text", text: "json으로 대답" }],
+        },
+      ],
+      responseFormat: {
+        type: "json",
+        schema: {
+          type: "object",
+          additionalProperties: false,
+          required: ["answer", "reason"],
+          properties: {
+            answer: { type: "string" },
+            reason: { type: "string" },
+          },
+        },
+      },
+    });
+
+    const parts: unknown[] = [];
+    for await (const part of streamResult.stream) {
+      parts.push(part);
+    }
+
+    const errorPart = parts.find(part => {
+      return typeof part === "object" && part !== null && "type" in part && part.type === "error";
+    });
+    expect(errorPart).toBeUndefined();
+
+    const finishPart = parts.find(part => {
+      return typeof part === "object" && part !== null && "type" in part && part.type === "finish";
+    });
+    expect(finishPart).toBeDefined();
+
+    if (typeof finishPart !== "object" || finishPart === null || !("finishReason" in finishPart)) {
+      return;
+    }
+
+    const finishReason = finishPart.finishReason;
+    if (
+      typeof finishReason !== "object" ||
+      finishReason === null ||
+      !("unified" in finishReason) ||
+      !("raw" in finishReason)
+    ) {
+      return;
+    }
+
+    expect(finishReason.unified).toBe("stop");
+    expect(finishReason.raw).toBe("error_max_structured_output_retries_recovered");
   });
 });

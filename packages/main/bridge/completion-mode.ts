@@ -5,23 +5,26 @@ import { isFunctionTool, isRecord, safeJsonStringify } from "../shared/type-read
 export type CompletionMode =
   | {
       type: "plain-text";
+      provider: string;
     }
   | {
       type: "json";
+      provider: string;
       schema: Record<string, unknown>;
     }
   | {
       type: "tools";
+      provider: string;
       schema: Record<string, unknown>;
       tools: LanguageModelV3FunctionTool[];
     };
 
 export const buildToolInstruction = (
   tools: LanguageModelV3FunctionTool[],
-  toolChoice: LanguageModelV3CallOptions["toolChoice"],
+  toolChoice: LanguageModelV3CallOptions["toolChoice"]
 ): string => {
   const toolLines = tools
-    .map((toolDefinition) => {
+    .map(toolDefinition => {
       const description = toolDefinition.description ?? "No description";
       const schema = safeJsonStringify(toolDefinition.inputSchema);
 
@@ -52,14 +55,12 @@ export const buildToolInstruction = (
 
 export const buildToolSchema = (
   tools: LanguageModelV3FunctionTool[],
-  toolChoice: LanguageModelV3CallOptions["toolChoice"],
+  toolChoice: LanguageModelV3CallOptions["toolChoice"]
 ): Record<string, unknown> => {
   const filteredTools =
-    toolChoice?.type === "tool"
-      ? tools.filter((toolDefinition) => toolDefinition.name === toolChoice.toolName)
-      : tools;
+    toolChoice?.type === "tool" ? tools.filter(toolDefinition => toolDefinition.name === toolChoice.toolName) : tools;
 
-  const callVariants = filteredTools.map((toolDefinition) => {
+  const callVariants = filteredTools.map(toolDefinition => {
     return {
       type: "object",
       additionalProperties: false,
@@ -92,10 +93,7 @@ export const buildToolSchema = (
           calls: {
             type: "array",
             minItems: 1,
-            items:
-              callVariants.length > 0
-                ? { oneOf: callVariants }
-                : { type: "object", additionalProperties: true },
+            items: callVariants.length > 0 ? { oneOf: callVariants } : { type: "object", additionalProperties: true },
           },
         },
       },
@@ -103,13 +101,18 @@ export const buildToolSchema = (
   };
 };
 
-export const buildCompletionMode = (options: LanguageModelV3CallOptions): CompletionMode => {
+export const buildCompletionMode = (args: {
+  options: LanguageModelV3CallOptions;
+  provider: string;
+}): CompletionMode => {
+  const options = args.options;
   const tools = options.tools?.filter(isFunctionTool) ?? [];
   const hasToolMode = tools.length > 0 && options.toolChoice?.type !== "none";
 
   if (hasToolMode) {
     return {
       type: "tools",
+      provider: args.provider,
       schema: buildToolSchema(tools, options.toolChoice),
       tools,
     };
@@ -120,11 +123,13 @@ export const buildCompletionMode = (options: LanguageModelV3CallOptions): Comple
 
     return {
       type: "json",
+      provider: args.provider,
       schema,
     };
   }
 
   return {
     type: "plain-text",
+    provider: args.provider,
   };
 };

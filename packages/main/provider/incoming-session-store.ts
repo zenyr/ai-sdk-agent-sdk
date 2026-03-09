@@ -24,12 +24,13 @@ type PersistedIncomingSessionState = {
 
 type CacheFilePathInput = {
   modelId: string;
+  runtimeFingerprint: string;
   incomingSessionKey: string;
 };
 
 const SESSION_CACHE_ROOT_DIRNAME = "ai-sdk-agent-sdk";
 const SESSION_CACHE_SUBDIR = "session-join";
-const SESSION_CACHE_VERSION = "v1";
+const SESSION_CACHE_VERSION = "v2";
 const MEMORY_CACHE_LIMIT = 100;
 
 const readNonEmptyString = (value: unknown): string | undefined => {
@@ -121,7 +122,7 @@ const parsePersistedIncomingSessionState = (value: unknown): IncomingSessionStat
 };
 
 const buildPersistedIncomingSessionState = (
-  incomingSessionState: IncomingSessionState,
+  incomingSessionState: IncomingSessionState
 ): PersistedIncomingSessionState => {
   return {
     version: 1,
@@ -144,20 +145,21 @@ class IncomingSessionStore {
       resolveCacheHomePath(),
       SESSION_CACHE_ROOT_DIRNAME,
       SESSION_CACHE_SUBDIR,
-      SESSION_CACHE_VERSION,
+      SESSION_CACHE_VERSION
     );
   }
 
   private buildCacheKey(args: CacheFilePathInput): string {
-    return `${args.modelId}\u0000${args.incomingSessionKey}`;
+    return `${args.modelId}\u0000${args.runtimeFingerprint}\u0000${args.incomingSessionKey}`;
   }
 
   private buildCacheFilePath(args: CacheFilePathInput): string {
     const modelPathKey = encodePathSegment(args.modelId);
+    const runtimePathKey = encodePathSegment(args.runtimeFingerprint);
     const conversationPathKey = encodePathSegment(args.incomingSessionKey);
     const bucketKey = readBucketKey(conversationPathKey);
 
-    return join(this.cacheRootPath, modelPathKey, bucketKey, `${conversationPathKey}.json`);
+    return join(this.cacheRootPath, modelPathKey, runtimePathKey, bucketKey, `${conversationPathKey}.json`);
   }
 
   private readFromMemoryCache(args: CacheFilePathInput): IncomingSessionState | undefined {

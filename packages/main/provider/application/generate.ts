@@ -1,0 +1,585 @@
+import type {
+  LanguageModelV3CallOptions,
+  LanguageModelV3Content,
+  LanguageModelV3GenerateResult,
+  SharedV3Warning,
+} from "@ai-sdk/provider";
+import type { SDKAssistantMessage, SDKResultMessage, SDKSystemMessage } from "@anthropic-ai/claude-agent-sdk";
+
+import { parseStructuredEnvelopeFromText } from "../../bridge/parse-utils";
+import { buildProviderMetadata, mapFinishReason, mapUsage } from "../../bridge/result-mapping";
+import { appendStreamPartsFromRawEvent, closePendingStreamBlocks } from "../../bridge/stream-event-mapper";
+import { createEmptyUsage, type StreamBlockState, type StreamEventState } from "../../shared/stream-types";
+import type { AgentSdkProviderSettings, ToolCallDelegate, ToolExecutorMap } from "../../shared/tool-executor";
+import { safeJsonStringify } from "../../shared/type-readers";
+import type { PromptSessionState } from "../domain/prompt-session-state";
+import { buildToolBridgeConfig, fromBridgeToolName, isBridgeToolName } from "../domain/tool-bridge-config";
+import {
+  hasToolModePrimaryContent,
+  recoverToolModeContentFromAssistantText,
+  recoverToolModeToolCallsFromAssistant,
+} from "../domain/tool-recovery";
+import type { IncomingSessionState } from "../incoming-session-store";
+import type { AgentRuntimePort } from "../ports/agent-runtime-port";
+import type { PendingBridgeToolInputs } from "./bridge-tool-input-buffer";
+import { createAbortBridge, prepareQueryContext } from "./query-context";
+import { buildAgentQueryOptions } from "./query-options";
+import {
+  EMPTY_TOOL_ROUTING_OUTPUT_ERROR,
+  EMPTY_TOOL_ROUTING_OUTPUT_TEXT,
+  extractAssistantText,
+  isAssistantMessage,
+  isPartialAssistantMessage,
+  isResultMessage,
+  isStructuredOutputRetryExhausted,
+  isSystemInitMessage,
+  normalizeRuntimeQueryError,
+} from "./runtime-message-utils";
+import { persistQuerySessionState } from "./session-persistence";
+import {
+  appendBridgeToolCallCapture,
+  finishBridgeToolCallCapture,
+  startBridgeToolCallCapture,
+} from "./tool-call-facade";
+import { resolveToolModeEnvelopeFromText, resolveToolModeEnvelopeFromUnknown } from "./tool-mode-envelope-facade";
+
+export const runGenerate = async (args: {
+  options: LanguageModelV3CallOptions;
+  provider: string;
+  modelId: string;
+  settings: AgentSdkProviderSettings;
+  idGenerator: () => string;
+  toolExecutors: ToolExecutorMap | undefined;
+  toolCallDelegate: ToolCallDelegate | undefined;
+  maxTurns: number | undefined;
+  runtime: AgentRuntimePort;
+  providerSettingWarnings: SharedV3Warning[];
+  previousSessionStates: () => PromptSessionState[];
+  setPromptSessionStates: (sessionStates: PromptSessionState[]) => void;
+  previousIncomingSessionStates: () => IncomingSessionState[];
+  hydrateIncomingSessionState: (incomingSessionKey: string) => Promise<void>;
+  persistIncomingSessionState: (incomingSessionState: IncomingSessionState) => Promise<void>;
+  buildPartialToolExecutorWarning: (missingExecutorToolNames: string[]) => SharedV3Warning;
+}): Promise<LanguageModelV3GenerateResult> => {
+  const {
+    completionMode,
+    warnings,
+    incomingSessionKey,
+    promptQueryInput,
+    prompt,
+    systemPrompt,
+    outputFormat,
+    queryPrompt,
+    toolBridgeConfig,
+    useNativeToolExecution,
+    effort,
+    thinking,
+  } = await prepareQueryContext({
+    options: args.options,
+    provider: args.provider,
+    providerSettingWarnings: args.providerSettingWarnings,
+    previousSessionStates: args.previousSessionStates,
+    previousIncomingSessionStates: args.previousIncomingSessionStates,
+    hydrateIncomingSessionState: args.hydrateIncomingSessionState,
+    buildToolBridgeConfig: tools => {
+      return buildToolBridgeConfig(tools, args.toolExecutors, args.toolCallDelegate);
+    },
+    buildPartialToolExecutorWarning: args.buildPartialToolExecutorWarning,
+  });
+
+  const { abortController, cleanupAbortListener } = createAbortBridge(args.options.abortSignal);
+  const runtimeStderrChunks: string[] = [];
+
+  const queryOptions = buildAgentQueryOptions({
+    modelId: args.modelId,
+    settings: args.settings,
+    allowedTools: useNativeToolExecution ? (toolBridgeConfig?.allowedTools ?? []) : [],
+    mcpServers: useNativeToolExecution ? toolBridgeConfig?.mcpServers : undefined,
+    resumeSessionId: promptQueryInput.resumeSessionId,
+    systemPrompt,
+    maxTurns: args.maxTurns,
+    useNativeToolExecution,
+    abortController,
+    outputFormat,
+    effort,
+    thinking,
+    includePartialMessages: completionMode.type === "tools",
+    onStderr: data => {
+      runtimeStderrChunks.push(data);
+    },
+  });
+
+  let lastAssistantMessage: SDKAssistantMessage | undefined;
+  let finalResultMessage: SDKResultMessage | undefined;
+  let initSystemMessage: SDKSystemMessage | undefined;
+  const partialStreamState: StreamEventState = {
+    blockStates: new Map<number, StreamBlockState>(),
+    emittedResponseMetadata: false,
+    latestStopReason: null,
+    latestUsage: undefined,
+  };
+  const bufferedToolModeText: string[] = [];
+  const pendingBridgeToolInputs: PendingBridgeToolInputs = new Map();
+  const recoveredToolCallsFromStream: LanguageModelV3Content[] = [];
+  let runtimeQueryError: { message: string; raw: string } | undefined;
+
+  const readFallbackResultText = (message: SDKResultMessage): string => {
+    return "result" in message && typeof message.result === "string" ? message.result : "";
+  };
+
+  const appendRecoveredToolCall = (toolCall: Extract<LanguageModelV3Content, { type: "tool-call" }>) => {
+    recoveredToolCallsFromStream.push(toolCall);
+  };
+
+  try {
+    for await (const message of args.runtime.query({
+      prompt: queryPrompt,
+      options: queryOptions,
+    })) {
+      if (isPartialAssistantMessage(message)) {
+        const mappedParts = appendStreamPartsFromRawEvent(message.event, partialStreamState);
+
+        for (const mappedPart of mappedParts) {
+          if (
+            completionMode.type === "tools" &&
+            !useNativeToolExecution &&
+            mappedPart.type === "tool-input-start" &&
+            isBridgeToolName(mappedPart.toolName)
+          ) {
+            startBridgeToolCallCapture({
+              pendingBridgeToolInputs,
+              part: mappedPart,
+            });
+            continue;
+          }
+
+          if (completionMode.type === "tools" && !useNativeToolExecution && mappedPart.type === "tool-input-delta") {
+            appendBridgeToolCallCapture({
+              pendingBridgeToolInputs,
+              part: mappedPart,
+            });
+
+            continue;
+          }
+
+          if (completionMode.type === "tools" && !useNativeToolExecution && mappedPart.type === "tool-input-end") {
+            const toolCall = finishBridgeToolCallCapture({
+              pendingBridgeToolInputs,
+              part: mappedPart,
+              providerExecuted: useNativeToolExecution,
+            });
+
+            if (toolCall !== undefined) {
+              appendRecoveredToolCall(toolCall);
+            }
+
+            continue;
+          }
+
+          if (completionMode.type === "tools" && !useNativeToolExecution && mappedPart.type === "text-delta") {
+            bufferedToolModeText.push(mappedPart.delta);
+          }
+        }
+
+        continue;
+      }
+
+      if (isAssistantMessage(message)) {
+        lastAssistantMessage = message;
+      }
+
+      if (isResultMessage(message)) {
+        finalResultMessage = message;
+      }
+
+      if (isSystemInitMessage(message)) {
+        initSystemMessage ??= message;
+      }
+    }
+
+    const remainingParts = closePendingStreamBlocks(partialStreamState);
+    for (const remainingPart of remainingParts) {
+      if (completionMode.type === "tools" && !useNativeToolExecution && remainingPart.type === "tool-input-end") {
+        const toolCall = finishBridgeToolCallCapture({
+          pendingBridgeToolInputs,
+          part: remainingPart,
+          providerExecuted: useNativeToolExecution,
+        });
+
+        if (toolCall !== undefined) {
+          appendRecoveredToolCall(toolCall);
+        }
+      }
+    }
+  } catch (error) {
+    runtimeQueryError = normalizeRuntimeQueryError(error, runtimeStderrChunks.join(""));
+  } finally {
+    cleanupAbortListener();
+  }
+
+  if (runtimeQueryError !== undefined) {
+    return {
+      content: [{ type: "text", text: runtimeQueryError.message }],
+      finishReason: {
+        unified: "error",
+        raw: runtimeQueryError.raw,
+      },
+      usage: partialStreamState.latestUsage ?? createEmptyUsage(),
+      warnings,
+      request: {
+        body: {
+          prompt,
+          systemPrompt,
+          completionMode: completionMode.type,
+        },
+      },
+      response: {
+        modelId: args.modelId,
+        timestamp: new Date(),
+      },
+    };
+  }
+
+  await persistQuerySessionState({
+    resultMessage: finalResultMessage,
+    assistantMessage: lastAssistantMessage,
+    initSystemMessage,
+    incomingSessionKey,
+    serializedPromptMessages: promptQueryInput.serializedPromptMessages,
+    promptMessages: args.options.prompt,
+    previousSessionStates: args.previousSessionStates,
+    setPromptSessionStates: args.setPromptSessionStates,
+    persistIncomingSessionState: args.persistIncomingSessionState,
+  });
+
+  if (finalResultMessage === undefined) {
+    if (completionMode.type === "tools" && !useNativeToolExecution) {
+      if (recoveredToolCallsFromStream.length > 0) {
+        return {
+          content: recoveredToolCallsFromStream,
+          finishReason: {
+            unified: "tool-calls",
+            raw: "tool_use",
+          },
+          usage: partialStreamState.latestUsage ?? createEmptyUsage(),
+          warnings,
+          request: {
+            body: {
+              prompt,
+              systemPrompt,
+              completionMode: completionMode.type,
+            },
+          },
+          response: {
+            modelId: args.modelId,
+            timestamp: new Date(),
+          },
+        };
+      }
+
+      const recoveredToolCalls = recoverToolModeToolCallsFromAssistant({
+        assistantMessage: lastAssistantMessage,
+        idGenerator: args.idGenerator,
+        mapToolName: fromBridgeToolName,
+      });
+
+      if (recoveredToolCalls.length > 0) {
+        return {
+          content: recoveredToolCalls,
+          finishReason: {
+            unified: "tool-calls",
+            raw: "tool_use",
+          },
+          usage: partialStreamState.latestUsage ?? createEmptyUsage(),
+          warnings,
+          request: {
+            body: {
+              prompt,
+              systemPrompt,
+              completionMode: completionMode.type,
+            },
+          },
+          response: {
+            modelId: args.modelId,
+            timestamp: new Date(),
+          },
+        };
+      }
+    }
+
+    return {
+      content: [{ type: "text", text: extractAssistantText(lastAssistantMessage) }],
+      finishReason: {
+        unified: "error",
+        raw: "agent-sdk-no-result",
+      },
+      usage: partialStreamState.latestUsage ?? createEmptyUsage(),
+      warnings,
+    };
+  }
+
+  const usage = mapUsage(finalResultMessage);
+  const providerMetadata = buildProviderMetadata(finalResultMessage);
+  const bufferedText = bufferedToolModeText.join("");
+
+  let content: LanguageModelV3Content[] = [];
+  let finishReason = mapFinishReason(finalResultMessage.stop_reason);
+
+  if (completionMode.type === "tools" && useNativeToolExecution) {
+    if (finalResultMessage.subtype === "success") {
+      const assistantText = extractAssistantText(lastAssistantMessage);
+      const text = assistantText.length > 0 ? assistantText : finalResultMessage.result;
+      content = [{ type: "text", text }];
+    } else {
+      const errorText =
+        finalResultMessage.errors.length > 0
+          ? finalResultMessage.errors.join("\n")
+          : readFallbackResultText(finalResultMessage);
+      content = [
+        {
+          type: "text",
+          text: errorText,
+        },
+      ];
+      finishReason = {
+        unified: "error",
+        raw: finalResultMessage.subtype,
+      };
+    }
+
+    return {
+      content,
+      finishReason,
+      usage,
+      warnings,
+      providerMetadata,
+      request: {
+        body: {
+          prompt,
+          systemPrompt,
+          completionMode: completionMode.type,
+        },
+      },
+      response: {
+        modelId: args.modelId,
+        timestamp: new Date(),
+      },
+    };
+  }
+
+  if (finalResultMessage.subtype === "success") {
+    const structuredOutputResolution =
+      completionMode.type === "tools"
+        ? resolveToolModeEnvelopeFromUnknown({
+            value: finalResultMessage.structured_output,
+            idGenerator: args.idGenerator,
+          })
+        : undefined;
+    const bufferedTextResolution =
+      completionMode.type === "tools" &&
+      (structuredOutputResolution === undefined ||
+        (structuredOutputResolution.toolCalls.length === 0 && structuredOutputResolution.text === undefined)) &&
+      bufferedText.length > 0
+        ? resolveToolModeEnvelopeFromText({
+            text: bufferedText,
+            idGenerator: args.idGenerator,
+          })
+        : undefined;
+
+    if (completionMode.type === "tools" && structuredOutputResolution !== undefined) {
+      if (structuredOutputResolution.toolCalls.length > 0) {
+        content = structuredOutputResolution.toolCalls;
+        finishReason = {
+          unified: "tool-calls",
+          raw: "tool_use",
+        };
+      }
+    }
+
+    if (content.length === 0 && completionMode.type === "tools" && bufferedTextResolution?.toolCalls.length) {
+      content = bufferedTextResolution.toolCalls;
+      finishReason = {
+        unified: "tool-calls",
+        raw: "tool_use",
+      };
+    }
+
+    if (content.length === 0 && completionMode.type === "tools" && recoveredToolCallsFromStream.length > 0) {
+      content = recoveredToolCallsFromStream;
+      finishReason = {
+        unified: "tool-calls",
+        raw: "tool_use",
+      };
+    }
+
+    if (content.length === 0 && completionMode.type === "tools") {
+      const nativeToolCalls = recoverToolModeToolCallsFromAssistant({
+        assistantMessage: lastAssistantMessage,
+        idGenerator: args.idGenerator,
+        mapToolName: fromBridgeToolName,
+      });
+
+      if (nativeToolCalls.length > 0) {
+        content = nativeToolCalls;
+        finishReason = {
+          unified: "tool-calls",
+          raw: "tool_use",
+        };
+      }
+    }
+
+    if (content.length === 0 && completionMode.type === "tools" && structuredOutputResolution?.text !== undefined) {
+      content = [{ type: "text", text: structuredOutputResolution.text }];
+    }
+
+    if (content.length === 0 && completionMode.type === "tools" && bufferedTextResolution?.text !== undefined) {
+      content = [{ type: "text", text: bufferedTextResolution.text }];
+    }
+
+    if (content.length === 0 && completionMode.type === "json") {
+      if (finalResultMessage.structured_output !== undefined) {
+        content = [{ type: "text", text: safeJsonStringify(finalResultMessage.structured_output) }];
+      }
+    }
+
+    if (content.length === 0) {
+      const assistantText = extractAssistantText(lastAssistantMessage);
+      if (assistantText.length > 0) {
+        if (completionMode.type === "tools") {
+          const assistantTextResolution = resolveToolModeEnvelopeFromText({
+            text: assistantText,
+            idGenerator: args.idGenerator,
+          });
+
+          if (assistantTextResolution.toolCalls.length > 0) {
+            content = assistantTextResolution.toolCalls;
+            finishReason = {
+              unified: "tool-calls",
+              raw: "tool_use",
+            };
+          }
+
+          if (content.length === 0 && assistantTextResolution.text !== undefined) {
+            content = [{ type: "text", text: assistantTextResolution.text }];
+          }
+        }
+
+        if (content.length === 0) {
+          content = [{ type: "text", text: assistantText }];
+        }
+      }
+    }
+
+    if (content.length === 0 && completionMode.type === "tools" && bufferedText.length > 0) {
+      content = [{ type: "text", text: bufferedText }];
+    }
+
+    if (content.length === 0) {
+      content = [{ type: "text", text: finalResultMessage.result }];
+    }
+  }
+
+  if (finalResultMessage.subtype !== "success") {
+    if (completionMode.type === "tools" && recoveredToolCallsFromStream.length > 0) {
+      content = recoveredToolCallsFromStream;
+      finishReason = {
+        unified: "tool-calls",
+        raw: "tool_use",
+      };
+    }
+
+    if (completionMode.type === "tools") {
+      const recoveredToolCalls = recoverToolModeToolCallsFromAssistant({
+        assistantMessage: lastAssistantMessage,
+        idGenerator: args.idGenerator,
+        mapToolName: fromBridgeToolName,
+      });
+
+      if (recoveredToolCalls.length > 0) {
+        content = recoveredToolCalls;
+        finishReason = {
+          unified: "tool-calls",
+          raw: "tool_use",
+        };
+      }
+    }
+
+    const canRecoverFromStructuredOutputRetry =
+      content.length === 0 && isStructuredOutputRetryExhausted(finalResultMessage);
+
+    if (canRecoverFromStructuredOutputRetry) {
+      if (completionMode.type === "tools") {
+        const recoveredContent = recoverToolModeContentFromAssistantText({
+          assistantMessage: lastAssistantMessage,
+          idGenerator: args.idGenerator,
+        });
+
+        if (recoveredContent.length > 0) {
+          content = recoveredContent;
+
+          const hasRecoveredToolCalls = recoveredContent.some(part => {
+            return part.type === "tool-call";
+          });
+
+          finishReason = {
+            unified: hasRecoveredToolCalls ? "tool-calls" : "stop",
+            raw: "error_max_structured_output_retries_recovered",
+          };
+        }
+      } else {
+        const assistantText = extractAssistantText(lastAssistantMessage);
+        if (assistantText.length > 0) {
+          content = [{ type: "text", text: assistantText }];
+          finishReason = {
+            unified: "stop",
+            raw: "error_max_structured_output_retries_recovered",
+          };
+        }
+      }
+    }
+
+    if (content.length === 0) {
+      const errorText =
+        finalResultMessage.errors.length > 0
+          ? finalResultMessage.errors.join("\n")
+          : readFallbackResultText(finalResultMessage);
+      content = [{ type: "text", text: errorText }];
+      finishReason = {
+        unified: "error",
+        raw: finalResultMessage.subtype,
+      };
+    }
+  }
+
+  if (completionMode.type === "tools" && !hasToolModePrimaryContent(content) && finishReason.unified !== "error") {
+    content = [
+      {
+        type: "text",
+        text: EMPTY_TOOL_ROUTING_OUTPUT_TEXT,
+      },
+    ];
+    finishReason = {
+      unified: "error",
+      raw: EMPTY_TOOL_ROUTING_OUTPUT_ERROR,
+    };
+  }
+
+  return {
+    content,
+    finishReason,
+    usage,
+    warnings,
+    providerMetadata,
+    request: {
+      body: {
+        prompt,
+        systemPrompt,
+        completionMode: completionMode.type,
+      },
+    },
+    response: {
+      modelId: args.modelId,
+      timestamp: new Date(),
+    },
+  };
+};

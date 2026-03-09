@@ -24,7 +24,29 @@ npm install ai-sdk-agent-sdk
 bun add ai-sdk-agent-sdk
 ```
 
+## Entry points
+
+- `ai-sdk-agent-sdk`: package root legacy compatibility entry for OpenCode and other v2-style consumers
+- `ai-sdk-agent-sdk/v3`: spec-first provider entry without OpenCode compatibility overlays
+- `ai-sdk-agent-sdk/v2`: explicit legacy v2 compatibility entry
+
 ## Usage with opencode
+
+Recommended path:
+
+```bash
+bunx ai-sdk-agent-sdk-opencode-configurator setup
+```
+
+The configurator updates the OpenCode config file directly, fetches the current Anthropic model list from `models.dev`, keeps the default selection to mainstream Haiku/Sonnet/Opus, and generates thinking variants for reasoning-capable models.
+
+Useful commands:
+
+```bash
+bunx ai-sdk-agent-sdk-opencode-configurator status
+bunx ai-sdk-agent-sdk-opencode-configurator update --global
+bunx ai-sdk-agent-sdk-opencode-configurator remove --provider-id agent-sdk
+```
 
 Add the following entry inside the `providers` object in `~/.config/opencode/opencode.jsonc`:
 
@@ -35,7 +57,7 @@ Add the following entry inside the `providers` object in `~/.config/opencode/ope
       "npm": "ai-sdk-agent-sdk",
       "name": "❋ Claude Code",
       "options": {
-        "setCacheKey": true
+        "setCacheKey": true,
         // "baseURL": "https://your-proxy-or-custom-endpoint"
       },
       "models": {
@@ -84,9 +106,41 @@ Add the following entry inside the `providers` object in `~/.config/opencode/ope
 }
 ```
 
-The `npm` field tells opencode to load the provider from the installed package. Requires Claude Code to be authenticated.
+`setCacheKey: true` is recommended when the caller can provide a stable conversation key. This package reads `promptCacheKey` / `x-conversation-id`, maps that key to a persisted Claude Agent SDK `sessionId`, and resumes the same Claude session on later turns. Session reuse is isolated by model plus runtime fingerprint, including `baseURL`, so the same cache key does not cross-resume into a different upstream proxy.
+
+The `npm` field tells OpenCode to load the package root legacy compatibility entry. This keeps the v2-style `finishReason`/`finish`/`reason` shape that OpenCode expects. Ambient Claude login is the default auth path. If you pass `apiKey`, that explicit key is used instead.
+
+## Usage as a pure provider core
+
+If you want the spec-first provider entry without the OpenCode compatibility overlays, import the explicit v3 entry:
+
+```ts
+import { anthropic, createAnthropic } from "ai-sdk-agent-sdk/v3";
+```
+
+Provider factory options also support Agent SDK passthrough settings via `experimental_agentSdk`:
+
+```ts
+import { createAnthropic } from "ai-sdk-agent-sdk/v3";
+
+const provider = createAnthropic({
+  apiKey: process.env.ANTHROPIC_API_KEY,
+  experimental_agentSdk: {
+    cwd: "/path/to/workspace",
+    debug: true,
+  },
+});
+```
+
+Use the root entry when you need OpenCode-oriented legacy compatibility behavior. Use `ai-sdk-agent-sdk/v3` when you want the clean v3 provider surface directly.
+
+## Development workflow
+
+- Git hooks are managed by Lefthook (`bun install` runs `prepare` and installs hooks).
+- `pre-commit` runs Biome on staged files.
+- `commit-msg` enforces Conventional Commits via commitlint.
+- Biome is configured for a compact style (`lineWidth: 120`, `arrowParentheses: asNeeded`).
 
 ## Changelog
 
 [packages/main/CHANGELOG.md](./packages/main/CHANGELOG.md)
-

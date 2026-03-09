@@ -22,13 +22,10 @@ type AssertNever<T extends never> = T;
 type AssertAssignable<From, _To extends From> = true;
 
 // Extensions that exist in local but not in upstream (intentional additions)
-type LocalOnlyKeys = "isOpenCode";
+type LocalOnlyKeys = "withOpenCodeCompatibility";
 
 type MissingInLocal = Exclude<keyof UpstreamAnthropic, keyof LocalAnthropic>;
-type MissingInUpstream = Exclude<
-  Exclude<keyof LocalAnthropic, keyof UpstreamAnthropic>,
-  LocalOnlyKeys
->;
+type MissingInUpstream = Exclude<Exclude<keyof LocalAnthropic, keyof UpstreamAnthropic>, LocalOnlyKeys>;
 
 type _assertNoMissingInLocal = AssertNever<MissingInLocal>;
 type _assertNoMissingInUpstream = AssertNever<MissingInUpstream>;
@@ -39,14 +36,8 @@ const _providerCompatibility: UpstreamAnthropicProvider = localProvider;
 type _providerTypeForward = AssertAssignable<UpstreamAnthropicProvider, LocalAnthropicProvider>;
 type _providerTypeBackward = AssertAssignable<LocalAnthropicProvider, UpstreamAnthropicProvider>;
 
-type _providerSettingsForward = AssertAssignable<
-  UpstreamAnthropicProviderSettings,
-  LocalAnthropicProviderSettings
->;
-type _providerSettingsBackward = AssertAssignable<
-  LocalAnthropicProviderSettings,
-  UpstreamAnthropicProviderSettings
->;
+type _providerSettingsForward = AssertAssignable<UpstreamAnthropicProviderSettings, LocalAnthropicProviderSettings>;
+type _providerSettingsBackward = AssertAssignable<LocalAnthropicProviderSettings, UpstreamAnthropicProviderSettings>;
 
 type _languageModelOptionsForward = AssertAssignable<
   UpstreamAnthropicLanguageModelOptions,
@@ -57,31 +48,13 @@ type _languageModelOptionsBackward = AssertAssignable<
   UpstreamAnthropicLanguageModelOptions
 >;
 
-type _messageMetadataForward = AssertAssignable<
-  UpstreamAnthropicMessageMetadata,
-  LocalAnthropicMessageMetadata
->;
-type _messageMetadataBackward = AssertAssignable<
-  LocalAnthropicMessageMetadata,
-  UpstreamAnthropicMessageMetadata
->;
+type _messageMetadataForward = AssertAssignable<UpstreamAnthropicMessageMetadata, LocalAnthropicMessageMetadata>;
+type _messageMetadataBackward = AssertAssignable<LocalAnthropicMessageMetadata, UpstreamAnthropicMessageMetadata>;
 
-type _toolOptionsForward = AssertAssignable<
-  UpstreamAnthropicToolOptions,
-  LocalAnthropicToolOptions
->;
-type _toolOptionsBackward = AssertAssignable<
-  LocalAnthropicToolOptions,
-  UpstreamAnthropicToolOptions
->;
+type _toolOptionsForward = AssertAssignable<UpstreamAnthropicToolOptions, LocalAnthropicToolOptions>;
+type _toolOptionsBackward = AssertAssignable<LocalAnthropicToolOptions, UpstreamAnthropicToolOptions>;
 
-type _usageIterationForward = AssertAssignable<
-  UpstreamAnthropicUsageIteration,
-  LocalAnthropicUsageIteration
->;
-type _usageIterationBackward = AssertAssignable<
-  LocalAnthropicUsageIteration,
-  UpstreamAnthropicUsageIteration
->;
+type _usageIterationForward = AssertAssignable<UpstreamAnthropicUsageIteration, LocalAnthropicUsageIteration>;
+type _usageIterationBackward = AssertAssignable<LocalAnthropicUsageIteration, UpstreamAnthropicUsageIteration>;
 
 void _providerCompatibility;

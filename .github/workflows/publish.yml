@@ -1,15 +1,16 @@
-name: Release (RC)
+name: Publish
 
 on:
   push:
     branches:
+      - main
       - next
 
 concurrency: ${{ github.workflow }}-${{ github.ref }}
 
 jobs:
-  release-rc:
-    name: Release RC
+  publish:
+    name: Publish
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -26,20 +27,34 @@ jobs:
         with:
           bun-version: latest
 
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      - name: Enter pre mode if not already
+      - name: Enter rc pre mode on next
+        if: github.ref == 'refs/heads/next'
         run: |
           if ! grep -q '"mode": "pre"' .changeset/pre.json 2>/dev/null; then
             bunx changeset pre enter rc
           fi
 
-      - name: Create Release PR or Publish RC
+      - name: Exit rc pre mode on main
+        if: github.ref == 'refs/heads/main'
+        run: |
+          if grep -q '"mode": "pre"' .changeset/pre.json 2>/dev/null; then
+            bunx changeset pre exit
+          fi
+
+      - name: Create Publish PR or Publish
         uses: changesets/action@v1
         with:
           publish: bun run release
-          title: "chore: version packages (rc)"
-          commit: "chore: version packages (rc)"
+          title: "${{ github.ref == 'refs/heads/next' && 'chore: version rc packages' || 'chore: version packages' }}"
+          commit: "${{ github.ref == 'refs/heads/next' && 'chore: version rc packages' || 'chore: version packages' }}"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

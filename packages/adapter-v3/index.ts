@@ -1,4 +1,4 @@
-import type { AnthropicLanguageModelOptions } from "@ai-sdk/anthropic";
+import type { AnthropicLanguageModelOptions, AnthropicProviderSettings } from "@ai-sdk/anthropic";
 
 export type {
   AnthropicLanguageModelOptions,
@@ -8,16 +8,20 @@ export type {
   AnthropicToolOptions,
   AnthropicUsageIteration,
 } from "@ai-sdk/anthropic";
-export type {
-  AgentSdkProviderSettings,
-  ToolExecutor,
-  ToolExecutorMap,
-} from "ai-sdk-agent-sdk";
 export {
   anthropic,
   createAnthropic,
   forwardAnthropicContainerIdFromLastStep,
   VERSION,
-} from "ai-sdk-agent-sdk";
+} from "ai-sdk-agent-sdk/v3";
 
 export type AnthropicProviderOptions = AnthropicLanguageModelOptions;
+
+export type ToolExecutor = (input: Record<string, unknown>) => unknown | Promise<unknown>;
+
+export type ToolExecutorMap = Record<string, ToolExecutor>;
+
+export type AgentSdkProviderSettings = AnthropicProviderSettings & {
+  toolExecutors?: ToolExecutorMap;
+  maxTurns?: number;
+};

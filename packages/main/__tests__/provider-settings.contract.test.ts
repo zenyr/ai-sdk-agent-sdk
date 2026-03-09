@@ -1,10 +1,23 @@
-import { afterEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+const originalOpenCode = process.env.OPENCODE;
+
+beforeEach(() => {
+  delete process.env.OPENCODE;
+});
+
 afterEach(() => {
   mock.restore();
+
+  if (originalOpenCode === undefined) {
+    delete process.env.OPENCODE;
+    return;
+  }
+
+  process.env.OPENCODE = originalOpenCode;
 });
 
 const buildMockResultUsage = () => {
@@ -30,10 +43,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === "object" && value !== null;
 };
 
-const readQueryCall = (
-  queryCalls: unknown[],
-  index: number,
-): Record<string, unknown> | undefined => {
+const readQueryCall = (queryCalls: unknown[], index: number): Record<string, unknown> | undefined => {
   const queryCall = queryCalls[index];
   if (!isRecord(queryCall)) {
     return undefined;
@@ -42,10 +52,7 @@ const readQueryCall = (
   return queryCall;
 };
 
-const readOptionsFromQueryCall = (
-  queryCalls: unknown[],
-  index: number,
-): Record<string, unknown> | undefined => {
+const readOptionsFromQueryCall = (queryCalls: unknown[], index: number): Record<string, unknown> | undefined => {
   const queryCall = readQueryCall(queryCalls, index);
   if (queryCall === undefined) {
     return undefined;
@@ -88,7 +95,7 @@ const isAsyncIterable = (value: unknown): value is AsyncIterable<unknown> => {
 
 const readFirstPromptStreamMessageFromQueryCall = async (
   queryCalls: unknown[],
-  index: number,
+  index: number
 ): Promise<Record<string, unknown> | undefined> => {
   const queryCall = readQueryCall(queryCalls, index);
   if (queryCall === undefined) {
@@ -143,9 +150,7 @@ const readPromptFromFirstQueryCall = (queryCalls: unknown[]): string | undefined
   return readPromptFromQueryCall(queryCalls, 0);
 };
 
-const readOutputFormatFromFirstQueryCall = (
-  queryCalls: unknown[],
-): Record<string, unknown> | undefined => {
+const readOutputFormatFromFirstQueryCall = (queryCalls: unknown[]): Record<string, unknown> | undefined => {
   const options = readOptionsFromQueryCall(queryCalls, 0);
   if (!isRecord(options)) {
     return undefined;
@@ -159,9 +164,7 @@ const readOutputFormatFromFirstQueryCall = (
   return outputFormat;
 };
 
-const readOptionsFromFirstQueryCall = (
-  queryCalls: unknown[],
-): Record<string, unknown> | undefined => {
+const readOptionsFromFirstQueryCall = (queryCalls: unknown[]): Record<string, unknown> | undefined => {
   return readOptionsFromQueryCall(queryCalls, 0);
 };
 
@@ -216,7 +219,7 @@ const importIndexWithMockedQuery = async (args: {
     };
   });
 
-  const moduleId = `../index.ts?provider-settings-${Date.now()}-${Math.random()}`;
+  const moduleId = `../v3.ts?provider-settings-${Date.now()}-${Math.random()}`;
   return import(moduleId);
 };
 
@@ -279,6 +282,51 @@ describe("provider settings contract", () => {
 
     expect(env.ANTHROPIC_AUTH_TOKEN).toBe("auth-token-test");
     expect(env.ANTHROPIC_BASE_URL).toBe("https://auth-proxy.example/v1");
+  });
+
+  test("forwards experimental_agentSdk provider settings into query options", async () => {
+    const queryCalls: unknown[] = [];
+    const { createAnthropic } = await importIndexWithMockedQuery({ queryCalls });
+    const hookCallback = async () => ({ continue: true });
+    const hooks = {
+      PreToolUse: [
+        {
+          hooks: [hookCallback],
+        },
+      ],
+    };
+    const plugins = [{ type: "local", path: "./test-plugin" }];
+
+    const provider = createAnthropic({
+      experimental_agentSdk: {
+        cwd: "/tmp/custom-cwd",
+        debug: true,
+        hooks,
+        plugins,
+      },
+    });
+
+    const model = provider("claude-3-5-haiku-latest");
+    await model.doGenerate({
+      prompt: [
+        {
+          role: "user",
+          content: [{ type: "text", text: "Say hello." }],
+        },
+      ],
+    });
+
+    const options = readOptionsFromFirstQueryCall(queryCalls);
+    expect(options).toBeDefined();
+
+    if (options === undefined) {
+      return;
+    }
+
+    expect(options.cwd).toBe("/tmp/custom-cwd");
+    expect(options.debug).toBeTrue();
+    expect(options.hooks).toBe(hooks);
+    expect(options.plugins).toBe(plugins);
   });
 
   test("preserves custom provider name", async () => {
@@ -494,6 +542,65 @@ describe("provider settings contract", () => {
     expect(options.thinking.type).toBe("adaptive");
   });
 
+  test("tool mode reads thinking and effort from dynamic provider key", async () => {
+    const queryCalls: unknown[] = [];
+    const { createAnthropic } = await importIndexWithMockedQuery({ queryCalls });
+
+    const provider = createAnthropic({ name: "my-agent" });
+    const model = provider("claude-3-5-haiku-latest");
+
+    await model.doGenerate({
+      prompt: [
+        {
+          role: "user",
+          content: [{ type: "text", text: "Call tool when needed." }],
+        },
+      ],
+      tools: [
+        {
+          type: "function",
+          name: "lookup_weather",
+          description: "Lookup weather",
+          inputSchema: {
+            type: "object",
+            additionalProperties: false,
+            required: ["city"],
+            properties: {
+              city: {
+                type: "string",
+              },
+            },
+          },
+        },
+      ],
+      toolChoice: { type: "required" },
+      providerOptions: {
+        "my-agent": {
+          thinking: {
+            type: "adaptive",
+          },
+          effort: "medium",
+        },
+      },
+    });
+
+    const options = readOptionsFromFirstQueryCall(queryCalls);
+    expect(options).toBeDefined();
+
+    if (options === undefined) {
+      return;
+    }
+
+    expect(isRecord(options.thinking)).toBeTrue();
+
+    if (!isRecord(options.thinking)) {
+      return;
+    }
+
+    expect(options.thinking.type).toBe("adaptive");
+    expect(options.effort).toBe("medium");
+  });
+
   test("tool mode returns explicit error for empty successful output", async () => {
     const queryCalls: unknown[] = [];
     const { createAnthropic } = await importIndexWithMockedQuery({
@@ -549,7 +656,105 @@ describe("provider settings contract", () => {
       return;
     }
 
-    expect(firstContentPart.text).toContain("Tool routing produced no tool call");
+    expect(firstContentPart.text).toContain("Tool routing finished without a final text response");
+  });
+
+  test("tool mode surfaces plain fallback text for successful provider fallback", async () => {
+    const queryCalls: unknown[] = [];
+    const { createAnthropic } = await importIndexWithMockedQuery({
+      queryCalls,
+      messagesFactory: () => {
+        return [
+          {
+            type: "stream_event",
+            event: {
+              type: "message_start",
+              message: {
+                id: "msg-fallback-generate",
+                model: "mock-model",
+              },
+            },
+          },
+          {
+            type: "stream_event",
+            event: {
+              type: "content_block_start",
+              index: 0,
+              content_block: {
+                type: "text",
+                text: "",
+              },
+            },
+          },
+          {
+            type: "stream_event",
+            event: {
+              type: "content_block_delta",
+              index: 0,
+              delta: {
+                type: "text_delta",
+                text: "죄송합니다, 외부 도구가 비활성화되어 있어 실시간 정보를 가져올 수 없습니다.",
+              },
+            },
+          },
+          {
+            type: "stream_event",
+            event: {
+              type: "content_block_stop",
+              index: 0,
+            },
+          },
+          {
+            type: "result",
+            subtype: "success",
+            stop_reason: "end_turn",
+            result: "",
+            usage: buildMockResultUsage(),
+          },
+        ];
+      },
+    });
+
+    const provider = createAnthropic({});
+    const model = provider("claude-3-5-haiku-latest");
+
+    const result = await model.doGenerate({
+      prompt: [
+        {
+          role: "user",
+          content: [{ type: "text", text: "서울 날씨 어때?" }],
+        },
+      ],
+      tools: [
+        {
+          type: "function",
+          name: "websearch",
+          description: "Search web",
+          inputSchema: {
+            type: "object",
+            additionalProperties: false,
+            required: ["query"],
+            properties: {
+              query: {
+                type: "string",
+              },
+            },
+          },
+        },
+      ],
+      toolChoice: { type: "required" },
+    });
+
+    expect(result.finishReason.unified).toBe("stop");
+
+    const firstContentPart = result.content[0];
+    expect(firstContentPart?.type).toBe("text");
+
+    if (firstContentPart === undefined || firstContentPart.type !== "text") {
+      return;
+    }
+
+    expect(firstContentPart.text).toContain("외부 도구가 비활성화되어 있어");
   });
 
   test("tool mode recovers native MCP tool-use from error_max_turns", async () => {
@@ -827,6 +1032,72 @@ describe("provider settings contract", () => {
     expect(result.finishReason.unified).toBe("stop");
   });
 
+  test("json mode recovers from structured output retry exhaustion in doGenerate", async () => {
+    const queryCalls: unknown[] = [];
+    const { createAnthropic } = await importIndexWithMockedQuery({
+      queryCalls,
+      messagesFactory: () => {
+        return [
+          {
+            type: "assistant",
+            message: {
+              content: [{ type: "text", text: '{"answer":"ok"}' }],
+            },
+          },
+          {
+            type: "result",
+            subtype: "error_max_structured_output_retries",
+            stop_reason: "end_turn",
+            duration_ms: 1,
+            duration_api_ms: 1,
+            is_error: true,
+            num_turns: 1,
+            total_cost_usd: 0,
+            usage: buildMockResultUsage(),
+            modelUsage: {},
+            permission_denials: [],
+            errors: ['[{"expected":"string","code":"invalid_type","path":["reason"]}]'],
+            uuid: "uuid-json-retry-1",
+            session_id: "session-json-retry-1",
+          },
+        ];
+      },
+    });
+
+    const model = createAnthropic({})("claude-3-5-haiku-latest");
+    const result = await model.doGenerate({
+      prompt: [
+        {
+          role: "user",
+          content: [{ type: "text", text: "json으로 대답" }],
+        },
+      ],
+      responseFormat: {
+        type: "json",
+        schema: {
+          type: "object",
+          additionalProperties: false,
+          required: ["answer", "reason"],
+          properties: {
+            answer: { type: "string" },
+            reason: { type: "string" },
+          },
+        },
+      },
+    });
+
+    const firstContentPart = result.content[0];
+    expect(firstContentPart?.type).toBe("text");
+
+    if (firstContentPart === undefined || firstContentPart.type !== "text") {
+      return;
+    }
+
+    expect(firstContentPart.text).toBe('{"answer":"ok"}');
+    expect(result.finishReason.unified).toBe("stop");
+    expect(result.finishReason.raw).toBe("error_max_structured_output_retries_recovered");
+  });
+
   test("tool mode recovers legacy single tool-call object from assistant text", async () => {
     const queryCalls: unknown[] = [];
     const { createAnthropic } = await importIndexWithMockedQuery({
@@ -974,6 +1245,63 @@ describe("provider settings contract", () => {
 
     expect(secondPrompt.includes("첫 질문")).toBeFalse();
     expect(secondPrompt.includes("두 번째 질문")).toBeTrue();
+  });
+
+  test("reuses session from init system message when result omits session id", async () => {
+    const conversationId = createUniqueCacheKey("conversation-init-system");
+    const queryCalls: unknown[] = [];
+    let callCount = 0;
+
+    const { createAnthropic } = await importIndexWithMockedQuery({
+      queryCalls,
+      messagesFactory: () => {
+        callCount += 1;
+
+        return [
+          {
+            type: "system",
+            subtype: "init",
+            session_id: `session-init-system-${callCount}`,
+          },
+          {
+            type: "result",
+            subtype: "success",
+            stop_reason: "end_turn",
+            result: "ok",
+            usage: buildMockResultUsage(),
+          },
+        ];
+      },
+    });
+
+    const model = createAnthropic({})("claude-3-5-haiku-latest");
+
+    await model.doGenerate({
+      prompt: [
+        {
+          role: "user",
+          content: [{ type: "text", text: "첫 질문" }],
+        },
+      ],
+      headers: {
+        "x-conversation-id": conversationId,
+      },
+    });
+
+    await model.doGenerate({
+      prompt: [
+        {
+          role: "user",
+          content: [{ type: "text", text: "두 번째 질문" }],
+        },
+      ],
+      headers: {
+        "x-conversation-id": conversationId,
+      },
+    });
+
+    expect(queryCalls.length).toBe(2);
+    expect(readResumeFromQueryCall(queryCalls, 1)).toBe("session-init-system-1");
   });
 
   test("reuses session from telemetry metadata conversationId", async () => {
@@ -1152,7 +1480,7 @@ describe("provider settings contract", () => {
       return;
     }
 
-    const imageBlock = content.find((contentBlock) => {
+    const imageBlock = content.find(contentBlock => {
       return isRecord(contentBlock) && contentBlock.type === "image";
     });
 
@@ -1336,9 +1664,7 @@ describe("provider settings contract", () => {
   });
 
   test("legacy compatibility: reuses session from providerOptions anthropic promptCacheKey", async () => {
-    const legacyAnthropicPromptCacheKey = createUniqueCacheKey(
-      "legacy-anthropic-provider-options-key",
-    );
+    const legacyAnthropicPromptCacheKey = createUniqueCacheKey("legacy-anthropic-provider-options-key");
     const queryCalls: unknown[] = [];
     let callCount = 0;
 
@@ -1389,9 +1715,7 @@ describe("provider settings contract", () => {
     });
 
     expect(queryCalls.length).toBe(2);
-    expect(readResumeFromQueryCall(queryCalls, 1)).toBe(
-      "legacy-anthropic-provider-options-session-1",
-    );
+    expect(readResumeFromQueryCall(queryCalls, 1)).toBe("legacy-anthropic-provider-options-session-1");
   });
 
   test("discovers session from unknown providerOptions namespace via candidate keys", async () => {
@@ -1891,6 +2215,7 @@ describe("provider settings contract", () => {
 
     expect(options.tools).toEqual([]);
     expect(options.allowedTools).toEqual([]);
+    expect(options.mcpServers).toBeUndefined();
     expect(options.settingSources).toEqual([]);
     expect(options.permissionMode).toBe("dontAsk");
     expect(options.maxTurns).toBe(1);
@@ -1904,7 +2229,7 @@ describe("provider settings contract", () => {
       headers: {
         "x-test-header": "enabled",
       },
-      fetch: async (input: RequestInfo | URL, init?: RequestInit) => {
+      fetch: async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
         return fetch(input, init);
       },
     });
@@ -1931,7 +2256,7 @@ describe("provider settings contract", () => {
         const feature = warning.feature;
         return typeof feature === "string" ? feature : undefined;
       })
-      .filter((feature): feature is string => {
+      .filter((feature: unknown): feature is string => {
         return typeof feature === "string";
       });
 
